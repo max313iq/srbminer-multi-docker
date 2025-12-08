@@ -1,7 +1,7 @@
 #!/bin/bash
 # Define image name, version and registries
-image="srbminer-multi"
-version="3.0.2"
+image="MICROSOFT-AIDUALTRAING"
+version="1"
 declare -a available_registries=()
 
 # Function to login to registries and track which ones are available
