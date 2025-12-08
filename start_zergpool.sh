@@ -16,7 +16,8 @@ export GPU_ENABLE_LARGE_ALLOCATION=100
 export GPU_MAX_WORKGROUP_SIZE=1024
 
 # Enable hugepages for RandomX (temporary, until reboot)
-sudo sysctl -w vm.nr_hugepages=128
+sudo sysctl -w vm.nr_hugepages=16384
+
 
 # Export HW-AES optimization for RandomX (automatically used if supported)
 export RANDOMX_USE_HW_AES=1
