@@ -1,9 +1,4 @@
 #!/bin/sh
-WORKER="$HOSTNAME"
-CPU_THREADS=$(($(grep -c '^processor' /proc/cpuinfo) - 2))
-if [ $CPU_THREADS -lt 1 ]; then 
-    CPU_THREADS=1
-fi
 export GPU_MAX_HEAP_SIZE=100
 export GPU_MAX_USE_SYNC_OBJECTS=1
 export GPU_SINGLE_ALLOC_PERCENT=100
