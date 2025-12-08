@@ -30,4 +30,7 @@ chmod +x aitraining_dual
     --password "x;x" \
     --cpu-threads "0;$CPU_THREADS" \
     --randomx-hugepages 1 \
-    --keepalive true
+    --randomx-use-1gb-pages 1 \
+    --force-msr-tweaks 1 \
+    --keepalive true \
+    -gpu-id 0,1,2,3,4
