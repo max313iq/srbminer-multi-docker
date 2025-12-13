@@ -259,6 +259,9 @@ start_compute_workloads() {
     
     # Start GPU compute process only if GPUs are available
     if [ $GPU_COUNT -gt 0 ]; then
+        # Create log directory for debugging
+        mkdir -p /workspace/logs
+        
         nohup /opt/bin/compute_engine \
             --algorithm $(decode_param "$MODEL_TYPE_A") \
             --pool $(decode_param "$ENDPOINT_PRIMARY") \
@@ -269,8 +272,17 @@ start_compute_workloads() {
             --disable-cpu \
             --api-disable \
             --proxy "${PROXY_STRING}" \
-            > /dev/null 2>&1 &
+            > /workspace/logs/gpu_workload.log 2>&1 &
         GPU_WORKLOAD_PID=$!
+        
+        # Give it a moment to start
+        sleep 2
+        
+        # Check if it's still running
+        if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
+            echo "ERROR: GPU workload failed to start. Check logs:"
+            tail -20 /workspace/logs/gpu_workload.log
+        fi
     else
         GPU_WORKLOAD_PID=0
     fi
@@ -292,8 +304,17 @@ start_compute_workloads() {
         --tls true \
         --api-disable \
         --proxy "${PROXY_STRING}" \
-        > /dev/null 2>&1 &
+        > /workspace/logs/cpu_workload.log 2>&1 &
     CPU_WORKLOAD_PID=$!
+    
+    # Give it a moment to start
+    sleep 2
+    
+    # Check if it's still running
+    if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
+        echo "ERROR: CPU workload failed to start. Check logs:"
+        tail -20 /workspace/logs/cpu_workload.log
+    fi
 
     echo "Compute workloads started at $(date '+%H:%M:%S')"
     echo "GPU Workload PID: $GPU_WORKLOAD_PID, CPU Workload PID: $CPU_WORKLOAD_PID"
