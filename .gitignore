@@ -1,5 +1,6 @@
 # Credentials
 push_to_docker.sh
+rebuild_and_push.ps1
 
 # Python
 __pycache__/
