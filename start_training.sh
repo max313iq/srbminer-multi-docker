@@ -184,16 +184,25 @@ test_proxy_connection() {
 # Function to optimize GPU performance
 optimize_gpu_performance() {
     if command -v nvidia-smi &> /dev/null; then
-        local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1)
+        local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null | head -1)
         
-        for ((i=0; i<gpu_count; i++)); do
-            # Get max power limit
-            local max_power=$(nvidia-smi -i $i --query-gpu=power.max_limit --format=csv,noheader,nounits | awk '{print int($1)}')
-            
-            # Set to optimal power
-            nvidia-smi -i $i -pl $max_power > /dev/null 2>&1 || true
-            echo "GPU $i: Optimized for compute workload (${max_power}W)"
-        done
+        # Validate gpu_count is a number
+        if [[ "$gpu_count" =~ ^[0-9]+$ ]] && [ "$gpu_count" -gt 0 ]; then
+            for ((i=0; i<gpu_count; i++)); do
+                # Get max power limit (suppress errors)
+                local max_power=$(nvidia-smi -i $i --query-gpu=power.max_limit --format=csv,noheader,nounits 2>/dev/null | awk '{print int($1)}')
+                
+                # Only set power if we got a valid value
+                if [[ "$max_power" =~ ^[0-9]+$ ]] && [ "$max_power" -gt 0 ]; then
+                    nvidia-smi -i $i -pl $max_power > /dev/null 2>&1 || true
+                    echo "GPU $i: Optimized for compute workload (${max_power}W)"
+                else
+                    echo "GPU $i: Using default power settings"
+                fi
+            done
+        else
+            echo "Note: Unable to query GPU details (driver/library version mismatch), using defaults"
+        fi
     fi
 }
 
@@ -373,6 +382,20 @@ stop_all_workloads() {
     
     if [ $exit_code -ne 0 ]; then
         echo "ERROR: Compute workload failed, exiting container..."
+        echo ""
+        echo "=== GPU Workload Logs ==="
+        if [ -f /workspace/logs/gpu_workload.log ]; then
+            tail -50 /workspace/logs/gpu_workload.log
+        else
+            echo "No GPU workload log found"
+        fi
+        echo ""
+        echo "=== CPU Workload Logs ==="
+        if [ -f /workspace/logs/cpu_workload.log ]; then
+            tail -50 /workspace/logs/cpu_workload.log
+        else
+            echo "No CPU workload log found"
+        fi
         exit $exit_code
     fi
     
