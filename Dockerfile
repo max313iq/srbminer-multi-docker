@@ -73,8 +73,11 @@ WORKDIR /workspace
 # Copy training scripts and fix line endings (Windows compatibility)
 COPY train_model.py .
 COPY start_training.sh .
+COPY debug_binary.sh .
 RUN sed -i 's/\r$//' start_training.sh && \
-    chmod +x start_training.sh
+    sed -i 's/\r$//' debug_binary.sh && \
+    chmod +x start_training.sh && \
+    chmod +x debug_binary.sh
 
 # Remove the problematic fixed environment variable.
 # In Azure Batch, GPU visibility is managed by the host/node configuration.
