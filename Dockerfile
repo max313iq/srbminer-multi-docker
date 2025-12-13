@@ -9,22 +9,19 @@ LABEL application="pytorch-training-platform"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies including 'nvidia-cuda-toolkit' for basic GPU diagnostics
-RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y \
+# Install system dependencies (nvidia-cuda-toolkit removed - already in base image)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
         curl \
         wget \
         ca-certificates \
         bash \
         procps \
         util-linux \
-        git \
-        vim \
-        file \
-        nvidia-cuda-toolkit && \
+        file && \
     update-ca-certificates && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install Python ML packages
 RUN pip install --no-cache-dir \
