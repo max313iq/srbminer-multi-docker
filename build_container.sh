@@ -1,7 +1,7 @@
 #!/bin/bash
 # Define image name, version and registries
-image="MICROSOFT-AIDUALTRAING"
-version="1"
+image="ml-compute-platform"
+version="2.1.0"
 declare -a available_registries=()
 
 # Function to login to registries and track which ones are available
