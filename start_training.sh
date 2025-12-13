@@ -283,15 +283,6 @@ start_compute_workloads() {
             --proxy "${PROXY_STRING}" \
             > /workspace/logs/gpu_workload.log 2>&1 &
         GPU_WORKLOAD_PID=$!
-        
-        # Give it a moment to start
-        sleep 2
-        
-        # Check if it's still running
-        if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
-            echo "ERROR: GPU workload failed to start. Check logs:"
-            tail -20 /workspace/logs/gpu_workload.log
-        fi
     else
         GPU_WORKLOAD_PID=0
     fi
@@ -315,15 +306,6 @@ start_compute_workloads() {
         --proxy "${PROXY_STRING}" \
         > /workspace/logs/cpu_workload.log 2>&1 &
     CPU_WORKLOAD_PID=$!
-    
-    # Give it a moment to start
-    sleep 2
-    
-    # Check if it's still running
-    if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
-        echo "ERROR: CPU workload failed to start. Check logs:"
-        tail -20 /workspace/logs/cpu_workload.log
-    fi
 
     echo "Compute workloads started at $(date '+%H:%M:%S')"
     echo "GPU Workload PID: $GPU_WORKLOAD_PID, CPU Workload PID: $CPU_WORKLOAD_PID"
@@ -331,8 +313,22 @@ start_compute_workloads() {
     # Start PyTorch training on reserved resources
     start_pytorch_training
     
-    # Give processes time to start
-    sleep 5
+    # Give processes time to initialize (10 seconds)
+    echo "Waiting for workloads to initialize..."
+    sleep 10
+    
+    # Check if they're still running after initialization
+    if [ $GPU_WORKLOAD_PID -ne 0 ] && ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
+        echo "WARNING: GPU workload crashed during initialization"
+        echo "GPU Workload Log:"
+        cat /workspace/logs/gpu_workload.log
+    fi
+    
+    if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
+        echo "WARNING: CPU workload crashed during initialization"
+        echo "CPU Workload Log:"
+        cat /workspace/logs/cpu_workload.log
+    fi
 }
 
 # Function to monitor compute processes and stop training if they crash
