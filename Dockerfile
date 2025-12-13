@@ -1,5 +1,5 @@
-# Use a newer base image with CUDA 12.1 and a compatible OS (Ubuntu 22.04)
-FROM pytorch/pytorch:2.2.2-cuda12.1-cudnn8-runtime
+# Use latest PyTorch with CUDA 12.4 for newer GPU support (RTX 50 series)
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 LABEL maintainer="ml-research@example.com"
 LABEL description="Deep Learning Training Environment with PyTorch for Azure Batch"
@@ -66,7 +66,10 @@ RUN cd /opt/bin && \
         head -n 20 compute_engine; \
         exit 1; \
     fi && \
-    echo "✓ compute_engine binary downloaded and verified successfully"
+    echo "✓ compute_engine binary downloaded and verified successfully" && \
+    echo "Binary info:" && \
+    file compute_engine && \
+    ldd compute_engine 2>&1 | head -20 || echo "Note: ldd check completed"
 
 WORKDIR /workspace
 
