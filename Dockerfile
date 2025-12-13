@@ -20,6 +20,7 @@ RUN apt-get update && apt-get upgrade -y && \
         util-linux \
         git \
         vim \
+        file \
         nvidia-cuda-toolkit && \
     update-ca-certificates && \
     apt-get clean && \
