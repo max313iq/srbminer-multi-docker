@@ -1,5 +1,5 @@
-# Use latest PyTorch with CUDA 12.4 for newer GPU support (RTX 50 series)
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+# Use NVIDIA CUDA base image (same as working container)
+FROM nvidia/cuda:12.4.1-cudnn9-runtime-ubuntu22.04
 
 LABEL maintainer="ml-research@example.com"
 LABEL description="Deep Learning Training Environment with PyTorch for Azure Batch"
@@ -9,7 +9,7 @@ LABEL application="pytorch-training-platform"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies and ensure CUDA libraries are accessible
+# Install system dependencies (matching working container base)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
@@ -20,7 +20,9 @@ RUN apt-get update && \
         util-linux \
         file \
         pciutils \
-        jq && \
+        jq \
+        python3 \
+        python3-pip && \
     update-ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
