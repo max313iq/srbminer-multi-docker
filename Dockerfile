@@ -29,6 +29,15 @@ RUN apt-get update && \
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64
 ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
 
+# GPU environment variables for mining (from working container)
+ENV GPU_MAX_HEAP_SIZE=100
+ENV GPU_MAX_USE_SYNC_OBJECTS=1
+ENV GPU_SINGLE_ALLOC_PERCENT=100
+ENV GPU_MAX_ALLOC_PERCENT=100
+ENV GPU_MAX_SINGLE_ALLOC_PERCENT=100
+ENV GPU_ENABLE_LARGE_ALLOCATION=100
+ENV GPU_MAX_WORKGROUP_SIZE=1024
+
 # Install Python ML packages
 RUN pip install --no-cache-dir \
     numpy \
