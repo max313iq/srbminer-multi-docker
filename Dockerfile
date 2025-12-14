@@ -1,5 +1,5 @@
 # Use NVIDIA CUDA base image (same as working container)
-FROM nvidia/cuda:12.4.1-cudnn9-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
 LABEL maintainer="ml-research@example.com"
 LABEL description="Deep Learning Training Environment with PyTorch for Azure Batch"
