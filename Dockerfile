@@ -9,7 +9,7 @@ LABEL application="pytorch-training-platform"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies (nvidia-cuda-toolkit removed - already in base image)
+# Install system dependencies and ensure CUDA libraries are accessible
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
@@ -18,10 +18,16 @@ RUN apt-get update && \
         bash \
         procps \
         util-linux \
-        file && \
+        file \
+        pciutils && \
     update-ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Ensure CUDA libraries are in the library path for SRBMiner
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=/usr/local/cuda/bin:${PATH}
 
 # Install Python ML packages
 RUN pip install --no-cache-dir \
