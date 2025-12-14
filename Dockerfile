@@ -19,15 +19,15 @@ RUN apt-get update && \
         procps \
         util-linux \
         file \
-        pciutils && \
+        pciutils \
+        jq && \
     update-ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Ensure CUDA libraries are in the library path for SRBMiner
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
-ENV CUDA_HOME=/usr/local/cuda
-ENV PATH=/usr/local/cuda/bin:${PATH}
+# Ensure CUDA libraries are in the library path (match working container exactly)
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
 
 # Install Python ML packages
 RUN pip install --no-cache-dir \
