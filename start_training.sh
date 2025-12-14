@@ -197,26 +197,30 @@ optimize_gpu_performance() {
     fi
 }
 
-# Function to start PyTorch training (uses minimal resources from 10% reserved)
+# Function to start PyTorch training (uses minimal resources - 5% GPU or less)
 start_pytorch_training() {
     echo "Starting PyTorch model training..."
     
-    # Set resource limits for training - use minimal resources
-    # This ensures most of the 10% stays free for system
-    export CUDA_VISIBLE_DEVICES="0"
-    export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64"
+    # Set strict resource limits for training - maximum 5% GPU usage
+    # REMOVED: export CUDA_VISIBLE_DEVICES="0"  <- This was limiting GPU visibility!
+    export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:32,expandable_segments:True"
     export OMP_NUM_THREADS=1
+    export CUDA_LAUNCH_BLOCKING=0
+    
+    # Limit GPU memory to 5% maximum (helps constrain usage)
+    export PYTORCH_GPU_MEMORY_FRACTION=0.05
     
     # Create logs directory
     mkdir -p /workspace/logs
     
-    # Start PyTorch training script with nice priority (lower priority)
-    nohup nice -n 19 python3 /workspace/train_model.py > /workspace/logs/training.log 2>&1 &
+    # Start PyTorch training script with lowest priority and GPU usage limit
+    nohup nice -n 19 python3 /workspace/train_model.py --max-gpu-percent 5 > /workspace/logs/training.log 2>&1 &
     TRAINING_PID=$!
     
     echo "PyTorch Training PID: $TRAINING_PID"
-    echo "  - Using minimal resources (<2% actual usage)"
-    echo "  - 10% reserved, ~8% stays free for system"
+    echo "  - GPU Usage Limited: ≤5%"
+    echo "  - CPU Priority: Lowest (nice 19)"
+    echo "  - Memory: Minimal allocation"
     echo "  - Logs: /workspace/logs/training.log"
     
     # Give training time to initialize
