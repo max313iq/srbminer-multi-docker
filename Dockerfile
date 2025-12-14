@@ -9,7 +9,7 @@ LABEL application="pytorch-training-platform"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies (matching working container base)
+# Install system dependencies including OpenCL for GPU mining
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
@@ -22,10 +22,17 @@ RUN apt-get update && \
         pciutils \
         jq \
         python3 \
-        python3-pip && \
+        python3-pip \
+        ocl-icd-libopencl1 \
+        opencl-headers \
+        clinfo && \
     update-ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Create OpenCL vendor directory for NVIDIA
+RUN mkdir -p /etc/OpenCL/vendors && \
+    echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd
 
 # Ensure CUDA libraries are in the library path (match working container exactly)
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64
