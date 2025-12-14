@@ -27,7 +27,7 @@ RUN apt-get update && \
 
 # Ensure CUDA libraries are in the library path (match working container exactly)
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64
-ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
+ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # GPU environment variables for mining (from working container)
 ENV GPU_MAX_HEAP_SIZE=100
